@@ -31,3 +31,6 @@ src/generated/
 # Logs
 logs/
 *.log
+
+# Claude Code local settings (personal permissions)
+.claude/

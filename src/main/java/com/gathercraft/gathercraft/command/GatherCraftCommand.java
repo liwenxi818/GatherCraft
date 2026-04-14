@@ -50,7 +50,7 @@ public class GatherCraftCommand {
             source.sendFailure(Component.literal("플레이어만 사용 가능합니다."));
             return 0;
         }
-        SkillType skill = findSkill(skillName);
+        SkillType skill = SkillType.findByName(skillName);
         if (skill == null) {
             source.sendFailure(Component.literal("알 수 없는 스킬: " + skillName
                 + "  (mining/lumberjack/farming/fishing/cooking/hunting/defense/smithing/enchanting)"));
@@ -91,15 +91,4 @@ public class GatherCraftCommand {
         return 1;
     }
 
-    private SkillType findSkill(String name) {
-        String lower = name.toLowerCase();
-        for (SkillType skill : SkillType.values()) {
-            if (skill.name().equalsIgnoreCase(lower)
-                || skill.getKoreanName().equals(name)
-                || skill.getEnglishName().equalsIgnoreCase(lower)) {
-                return skill;
-            }
-        }
-        return null;
-    }
 }

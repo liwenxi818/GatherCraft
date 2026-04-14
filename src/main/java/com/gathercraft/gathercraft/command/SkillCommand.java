@@ -49,7 +49,7 @@ public class SkillCommand {
             return 0;
         }
 
-        SkillType skill = findSkill(name);
+        SkillType skill = SkillType.findByName(name);
         if (skill == null) {
             source.sendFailure(Component.literal("알 수 없는 스킬: " + name));
             source.sendFailure(Component.literal("사용 가능: mining, lumberjack, farming, fishing, cooking, hunting, defense, smithing, enchanting"));
@@ -91,15 +91,4 @@ public class SkillCommand {
         return sb.toString();
     }
 
-    private SkillType findSkill(String name) {
-        String lower = name.toLowerCase();
-        for (SkillType skill : SkillType.values()) {
-            if (skill.name().toLowerCase().equals(lower)
-                || skill.getKoreanName().equals(name)
-                || skill.getEnglishName().toLowerCase().equals(lower)) {
-                return skill;
-            }
-        }
-        return null;
-    }
 }
