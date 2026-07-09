@@ -163,7 +163,7 @@ public class SkillXpBarOverlay {
             graphics.fill(barX, barY, barX + fillWidth, barY + BAR_HEIGHT, fillColor);
 
             // 바 끝부분 밝은 하이라이트
-            int highlightColor = (alphaInt << 24) | blendColor(barColor, 0xFFFFFF, 0.4f);
+            int highlightColor = (alphaInt << 24) | lerpColor(barColor, 0xFFFFFF, 0.4f);
             graphics.fill(barX, barY, barX + fillWidth, barY + 1, highlightColor);
         }
     }
@@ -180,10 +180,5 @@ public class SkillXpBarOverlay {
         int g = (int)(gA + (gB - gA) * t);
         int b = (int)(bA + (bB - bA) * t);
         return (r << 16) | (g << 8) | b;
-    }
-
-    /** 두 RGB 색상 블렌드 */
-    private static int blendColor(int base, int overlay, float amount) {
-        return lerpColor(base, overlay, amount);
     }
 }

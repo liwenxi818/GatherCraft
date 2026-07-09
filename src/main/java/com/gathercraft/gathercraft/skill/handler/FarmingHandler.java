@@ -1,8 +1,9 @@
 package com.gathercraft.gathercraft.skill.handler;
 
+import com.gathercraft.gathercraft.achievement.AchievementManager;
+import com.gathercraft.gathercraft.quest.QuestManager;
 import com.gathercraft.gathercraft.skill.SkillData;
 import com.gathercraft.gathercraft.skill.SkillManager;
-import com.gathercraft.gathercraft.skill.SkillPointStat;
 import com.gathercraft.gathercraft.skill.SkillType;
 import com.gathercraft.gathercraft.skill.SkillUtil;
 import net.minecraft.core.BlockPos;
@@ -10,10 +11,15 @@ import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.CropBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraftforge.event.entity.player.BonemealEvent;
 import net.minecraftforge.event.level.BlockEvent;
+import net.minecraftforge.eventbus.api.Event;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.util.concurrent.ThreadLocalRandom;
@@ -21,8 +27,7 @@ import java.util.concurrent.ThreadLocalRandom;
 /**
  * 농사 스킬 핸들러
  * - 완전히 자란 작물 수확 시 XP 적립
- * - 레벨별 보너스: 추가 드롭, 자동 재식(40레벨), 5x5 범위 수확(100레벨)
- * - 모션: COMPOSTER (수확), HAPPY_VILLAGER (자동 재식)
+ * - 레벨별 보너스: 추가 드롭, 자동 재식(40레벨), 뼛가루 즉시 완숙, 성장 가속, 5x5 수확(100레벨)
  */
 public class FarmingHandler {
 
@@ -35,6 +40,9 @@ public class FarmingHandler {
 
         SkillManager.addXP(player, SkillType.FARMING, 6);
 
+        QuestManager.progress(player, "farm", "ANY", 1);
+        AchievementManager.incrementAndCheck(player, "harvest", 1, "harvest_1000");
+
         int level = SkillData.getLevel(player, SkillType.FARMING);
         ServerLevel world = (ServerLevel) event.getLevel();
         BlockPos pos = event.getPos();
@@ -42,29 +50,94 @@ public class FarmingHandler {
         double by = pos.getY() + 0.5;
         double bz = pos.getZ() + 0.5;
 
-        // 항상: COMPOSTER 파티클
         world.sendParticles(ParticleTypes.COMPOSTER, bx, by + 0.5, bz, 6, 0.3, 0.2, 0.3, 0.05);
 
-        // 추가 드롭 보너스
-        double extraDropChance = extraDropChance(level)
-            + SkillData.getStatValue(player, SkillPointStat.FARMING_EXTRA_DROP);
+        double extraDropChance = extraDropChance(level);
         if (extraDropChance > 0 && ThreadLocalRandom.current().nextDouble() < extraDropChance) {
             SkillUtil.spawnExtraDrops(state, world, pos, player);
         }
 
-        // 40레벨: 씨앗 자동 재식 (항상) / 미만: 스탯 포인트 확률로 재식
-        float replantStat = SkillData.getStatValue(player, SkillPointStat.FARMING_REPLANT);
-        boolean shouldReplant = level >= 40
-            || (replantStat > 0 && ThreadLocalRandom.current().nextDouble() < replantStat);
-        if (shouldReplant) {
+        if (level >= 40) {
             autoReplant(state, world, pos);
-            // 자동 재식 시 초록 파티클
             world.sendParticles(ParticleTypes.HAPPY_VILLAGER, bx, by + 0.8, bz, 4, 0.2, 0.2, 0.2, 0.05);
         }
 
-        // 100레벨 각성: 주변 5x5 범위 작물 동시 수확
+        // [4] 희귀 작물 드롭 (50레벨 3%, 70레벨 8%, 90레벨 15%)
+        if (level >= 50) {
+            double rareChance;
+            if (level >= 90) rareChance = 0.15;
+            else if (level >= 70) rareChance = 0.08;
+            else rareChance = 0.03;
+
+            if (ThreadLocalRandom.current().nextDouble() < rareChance) {
+                Item[] rarePool = {
+                    Items.SWEET_BERRIES, Items.GLOW_BERRIES,
+                    Items.NETHER_WART, Items.CHORUS_FRUIT
+                };
+                Item chosen = rarePool[ThreadLocalRandom.current().nextInt(rarePool.length)];
+                world.addFreshEntity(new net.minecraft.world.entity.item.ItemEntity(
+                    world, bx, by, bz, new ItemStack(chosen)));
+            }
+        }
+
         if (level >= 100 && ThreadLocalRandom.current().nextDouble() < 0.25) {
             triggerAreaHarvest(player, world, pos);
+        }
+    }
+
+    // FARMING_BONEMEAL: 뼛가루 사용 시 즉시 완숙
+    @SubscribeEvent
+    public void onBonemeal(BonemealEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        if (!(event.getLevel() instanceof ServerLevel serverLevel)) return;
+
+        int level = SkillData.getLevel(player, SkillType.FARMING);
+
+        double chance;
+        if (level >= 90) chance = 0.80;
+        else if (level >= 70) chance = 0.50;
+        else if (level >= 40) chance = 0.25;
+        else return;
+
+        BlockPos pos = event.getPos();
+        BlockState state = event.getBlock();
+        if (!(state.getBlock() instanceof CropBlock cropBlock)) return;
+
+        if (ThreadLocalRandom.current().nextDouble() < chance) {
+            BlockState fullGrown = cropBlock.getStateForAge(cropBlock.getMaxAge());
+            serverLevel.setBlock(pos, fullGrown, Block.UPDATE_ALL);
+            event.setResult(Event.Result.ALLOW);
+        }
+    }
+
+    // FARMING_GROWTH: 자연 성장 시 추가 성장
+    @SubscribeEvent
+    public void onCropGrowPre(BlockEvent.CropGrowEvent.Pre event) {
+        if (!(event.getLevel() instanceof ServerLevel serverLevel)) return;
+        BlockPos pos = event.getPos();
+        BlockState state = event.getState();
+
+        // 주변 16블록 플레이어 중 가장 높은 파밍 레벨
+        int level = 0;
+        for (ServerPlayer sp : serverLevel.players()) {
+            if (sp.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) <= 256.0) {
+                int pLevel = SkillData.getLevel(sp, SkillType.FARMING);
+                if (pLevel > level) level = pLevel;
+            }
+        }
+
+        double chance;
+        if (level >= 80) chance = 0.40;
+        else if (level >= 50) chance = 0.20;
+        else return;
+
+        if (!(state.getBlock() instanceof CropBlock cropBlock)) return;
+        int age = cropBlock.getAge(state);
+        int maxAge = cropBlock.getMaxAge();
+        if (age >= maxAge) return;
+
+        if (ThreadLocalRandom.current().nextDouble() < chance) {
+            serverLevel.setBlock(pos, cropBlock.getStateForAge(Math.min(age + 1, maxAge)), Block.UPDATE_ALL);
         }
     }
 
@@ -86,8 +159,7 @@ public class FarmingHandler {
 
     private void autoReplant(BlockState state, ServerLevel world, BlockPos pos) {
         if (state.getBlock() instanceof CropBlock crop) {
-            BlockState sapling = crop.defaultBlockState();
-            world.setBlock(pos, sapling, Block.UPDATE_ALL);
+            world.setBlock(pos, crop.defaultBlockState(), Block.UPDATE_ALL);
         }
     }
 

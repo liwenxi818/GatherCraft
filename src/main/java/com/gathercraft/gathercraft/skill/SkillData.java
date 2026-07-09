@@ -50,6 +50,25 @@ public class SkillData {
         player.getPersistentData().put(ROOT_KEY, tag);
     }
 
+    /**
+     * NBT에서 스킬 데이터 로드 (재접속·리스폰 시 호출).
+     * 모든 읽기/쓰기가 getPersistentData()에 직접 반영되므로
+     * 루트 CompoundTag 존재 여부만 확인한다.
+     */
+    public static void loadFromNBT(Player player) {
+        getRoot(player);
+    }
+
+    /**
+     * 스킬 데이터를 NBT에 명시 저장 (로그아웃 시 호출).
+     * updateSkill/setLevel/setXP 모두 saveRoot()를 통해 즉시 반영되므로
+     * 실질적으로 no-op이지만, 안전 보장을 위해 루트 태그를 재기록한다.
+     */
+    public static void saveToNBT(Player player) {
+        CompoundTag tag = getRoot(player);
+        player.getPersistentData().put(ROOT_KEY, tag);
+    }
+
     // ---- 스킬 포인트 스탯 ----
 
     /** 누적 스탯 값을 반환한다. 기본값 0.0f. */

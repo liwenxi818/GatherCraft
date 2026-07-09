@@ -1,10 +1,11 @@
 @echo off
 cd /d "%~dp0"
 
-set JAR=build\libs\gathercraft-1.0.0.jar
+set JAR=
+for %%f in (build\libs\gathercraft-*.jar) do set JAR=%%f
 
-if not exist "%JAR%" (
-    echo [ERROR] JAR not found: %JAR%
+if "%JAR%"=="" (
+    echo [ERROR] JAR not found in build\libs
     echo Run: gradlew build
     pause
     exit /b 1
@@ -25,8 +26,8 @@ if not exist "%DEST%" (
     exit /b 1
 )
 
-echo Copying gathercraft-1.0.0.jar to %DEST%...
-copy /y "%JAR%" "%DEST%\gathercraft-1.0.0.jar" >nul
+echo Copying %JAR% to %DEST%...
+copy /y "%JAR%" "%DEST%\" >nul
 
 echo Done.
 pause

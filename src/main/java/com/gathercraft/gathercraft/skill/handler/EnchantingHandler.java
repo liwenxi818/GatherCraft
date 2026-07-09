@@ -2,32 +2,36 @@ package com.gathercraft.gathercraft.skill.handler;
 
 import com.gathercraft.gathercraft.skill.SkillData;
 import com.gathercraft.gathercraft.skill.SkillManager;
-import com.gathercraft.gathercraft.skill.SkillPointStat;
 import com.gathercraft.gathercraft.skill.SkillType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.EnchantmentMenu;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.EnchantmentInstance;
+import net.minecraft.world.item.enchantment.Enchantments;
 import net.minecraftforge.event.enchanting.EnchantmentLevelSetEvent;
 import net.minecraftforge.event.entity.player.PlayerContainerEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 마법부여 스킬 핸들러
  * - 인챈트 테이블 열기 감지로 XP 적립 (5분 쿨다운)
- * - 레벨별 보너스: 인챈트 비용 감소(TODO), 레벨 보너스(EnchantmentLevelSetEvent), 저주 면역(TODO)
- *
- * 참고: Forge 1.20.1에는 "플레이어가 인챈트 버튼을 클릭" 이벤트가 없음.
- *       PlayerContainerEvent.Open + 쿨다운으로 XP를 근사치 지급.
+ * - 레벨별 보너스: 인챈트 레벨 보너스, XP 비용 환급, 저주 면역, 추가 인챈트
  */
 public class EnchantingHandler {
 
-    private static final long COOLDOWN_TICKS = 5 * 60 * 20L; // 5분 = 6000틱
+    private static final long COOLDOWN_TICKS = 5 * 60 * 20L;
     private final Map<UUID, Long>    lastXpGrantTime = new HashMap<>();
     private final Map<UUID, Integer> xpLevelOnOpen   = new HashMap<>();
 
@@ -55,21 +59,92 @@ public class EnchantingHandler {
         Integer xpOnOpen = xpLevelOnOpen.remove(uuid);
         if (xpOnOpen == null) return;
 
-        // XP 레벨이 줄었다면 인챈트를 수행한 것
-        if (player.experienceLevel < xpOnOpen) {
-            long now = player.level().getGameTime();
-            if (now - lastXpGrantTime.getOrDefault(uuid, 0L) < COOLDOWN_TICKS) return;
-            lastXpGrantTime.put(uuid, now);
+        if (player.experienceLevel >= xpOnOpen) return;
 
-            int xpConsumed = xpOnOpen - player.experienceLevel;
-            SkillManager.addXP(player, SkillType.ENCHANTING, xpConsumed * 5L);
+        long now = player.level().getGameTime();
+        if (now - lastXpGrantTime.getOrDefault(uuid, 0L) < COOLDOWN_TICKS) return;
+        lastXpGrantTime.put(uuid, now);
+
+        int xpConsumed = xpOnOpen - player.experienceLevel;
+        SkillManager.addXP(player, SkillType.ENCHANTING, xpConsumed * 5L);
+
+        int enchLevel = SkillData.getLevel(player, SkillType.ENCHANTING);
+
+        // ENCHANTING_COST_REDUCE: 10/30/40/70/90레벨 XP 비용 일부 환급
+        float costReduceRate;
+        if (enchLevel >= 90) costReduceRate = 0.45f;
+        else if (enchLevel >= 70) costReduceRate = 0.30f;
+        else if (enchLevel >= 40) costReduceRate = 0.20f;
+        else if (enchLevel >= 30) costReduceRate = 0.15f;
+        else if (enchLevel >= 10) costReduceRate = 0.08f;
+        else costReduceRate = 0f;
+
+        if (costReduceRate > 0) {
+            int refund = (int)(xpConsumed * costReduceRate);
+            if (refund > 0) player.giveExperienceLevels(refund);
+        }
+
+        // ENCHANTING_CURSE_IMMUNE: 50/80/100레벨 저주 인챈트 제거
+        double curseImmuneChance;
+        if (enchLevel >= 100) curseImmuneChance = 1.0;
+        else if (enchLevel >= 80) curseImmuneChance = 0.60;
+        else if (enchLevel >= 50) curseImmuneChance = 0.30;
+        else curseImmuneChance = 0;
+
+        if (curseImmuneChance > 0 && ThreadLocalRandom.current().nextDouble() < curseImmuneChance) {
+            removeCurseEnchants(player);
+        }
+
+        // ENCHANTING_EXTRA: 60/80/100레벨 추가 인챈트
+        double extraChance;
+        if (enchLevel >= 100) extraChance = 0.35;
+        else if (enchLevel >= 80) extraChance = 0.20;
+        else if (enchLevel >= 60) extraChance = 0.10;
+        else extraChance = 0;
+
+        if (extraChance > 0 && ThreadLocalRandom.current().nextDouble() < extraChance) {
+            tryAddExtraEnchant(player, xpOnOpen);
+        }
+    }
+
+    private void removeCurseEnchants(ServerPlayer player) {
+        for (ItemStack stack : player.getInventory().items) {
+            removeCursesFromStack(stack);
+        }
+        for (ItemStack stack : player.getInventory().armor) {
+            removeCursesFromStack(stack);
+        }
+    }
+
+    private void removeCursesFromStack(ItemStack stack) {
+        if (stack.isEmpty()) return;
+        Map<Enchantment, Integer> enchants = new HashMap<>(EnchantmentHelper.getEnchantments(stack));
+        boolean changed = enchants.remove(Enchantments.BINDING_CURSE) != null;
+        changed |= enchants.remove(Enchantments.VANISHING_CURSE) != null;
+        if (changed) EnchantmentHelper.setEnchantments(enchants, stack);
+    }
+
+    private void tryAddExtraEnchant(ServerPlayer player, int targetLevel) {
+        for (ItemStack stack : player.getInventory().items) {
+            if (stack.isEmpty()) continue;
+            Map<Enchantment, Integer> enchants = new HashMap<>(EnchantmentHelper.getEnchantments(stack));
+            if (enchants.size() != 1) continue;
+
+            List<EnchantmentInstance> candidates = EnchantmentHelper.selectEnchantment(
+                RandomSource.create(), stack, targetLevel, false);
+            for (EnchantmentInstance inst : candidates) {
+                if (!enchants.containsKey(inst.enchantment)) {
+                    enchants.put(inst.enchantment, inst.level);
+                    EnchantmentHelper.setEnchantments(enchants, stack);
+                    break;
+                }
+            }
+            break;
         }
     }
 
     /**
-     * 인챈트 레벨 보너스 적용.
-     * 테이블 위치에서 5블록 내 가장 가까운 플레이어의 스킬 레벨을 참조.
-     * 20레벨 +1, 50레벨 +3, 80레벨 +5 슬롯 레벨 보너스.
+     * 인챈트 레벨 보너스: 20레벨 +1, 50레벨 +3, 80레벨 +5
      */
     @SubscribeEvent
     public void onEnchantmentLevelSet(EnchantmentLevelSetEvent event) {
@@ -80,12 +155,14 @@ public class EnchantingHandler {
         if (!(nearestPlayer instanceof ServerPlayer player)) return;
 
         int enchantSkillLevel = SkillData.getLevel(player, SkillType.ENCHANTING);
-        // 레벨 기반 보너스 + 스탯 포인트 보너스 (0.5 단위로 누적, 정수로 반올림)
-        float statBonus = SkillData.getStatValue(player, SkillPointStat.ENCHANTING_LEVEL_BONUS);
-        int bonus = getEnchantBonus(enchantSkillLevel) + Math.round(statBonus);
+        int bonus = getEnchantBonus(enchantSkillLevel);
         if (bonus > 0) {
-            // 최대 30 + bonus 까지 허용 (풀 서가 기준 초과 가능)
             event.setEnchantLevel(Math.min(event.getOriginalLevel() + bonus, 30 + bonus));
+        }
+
+        // [9] 100레벨 각성: 최고 등급 인챈트 보장
+        if (enchantSkillLevel >= 100) {
+            event.setEnchantLevel(30);
         }
     }
 

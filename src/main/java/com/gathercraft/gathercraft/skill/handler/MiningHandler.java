@@ -1,11 +1,14 @@
 package com.gathercraft.gathercraft.skill.handler;
 
+import com.gathercraft.gathercraft.achievement.AchievementManager;
 import com.gathercraft.gathercraft.particle.ParticleUtil;
+import com.gathercraft.gathercraft.quest.QuestManager;
 import com.gathercraft.gathercraft.skill.SkillData;
 import com.gathercraft.gathercraft.skill.SkillManager;
 import com.gathercraft.gathercraft.skill.SkillPointStat;
 import com.gathercraft.gathercraft.skill.SkillType;
 import com.gathercraft.gathercraft.skill.SkillUtil;
+import com.gathercraft.gathercraft.title.TitleManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
@@ -15,6 +18,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.common.Tags;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -26,13 +30,31 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public class MiningHandler {
 
+    /** 100레벨 각성 area mining 실행 중 재진입 방지 플래그 */
+    private static final ThreadLocal<Boolean> IS_AREA_MINING = ThreadLocal.withInitial(() -> false);
+
     @SubscribeEvent
     public void onBlockBreak(BlockEvent.BreakEvent event) {
+        if (IS_AREA_MINING.get()) return;
         if (!(event.getPlayer() instanceof ServerPlayer player)) return;
         BlockState state = event.getState();
         if (!state.is(Tags.Blocks.ORES)) return;
 
-        SkillManager.addXP(player, SkillType.MINING, 10);
+        long oreXp = getOreXP(state);
+        if (TitleManager.hasTitle(player, "miner_3")) {
+            oreXp = (long) (oreXp * 1.10);
+        }
+        SkillManager.addXP(player, SkillType.MINING, oreXp);
+
+        String blockId = ForgeRegistries.BLOCKS.getKey(state.getBlock()).getPath().toUpperCase();
+        QuestManager.progress(player, "mine", blockId, 1);
+        QuestManager.progress(player, "mine", "ANY", 1);
+        if (state.is(Tags.Blocks.ORES_DIAMOND) || state.is(Tags.Blocks.ORES_EMERALD)) {
+            AchievementManager.incrementAndCheck(player, "diamond", 1, "first_diamond", "diamond_100");
+        }
+        if (state.is(Tags.Blocks.ORES_NETHERITE_SCRAP)) {
+            AchievementManager.incrementAndCheck(player, "ancient", 1, "ancient_10");
+        }
 
         int level = SkillData.getLevel(player, SkillType.MINING);
         ServerLevel world = (ServerLevel) event.getLevel();
@@ -71,9 +93,26 @@ public class MiningHandler {
         }
 
         // 100레벨 각성: 15% 확률로 주변 3x3 광석 동시 채굴
+        // IS_AREA_MINING 플래그로 재진입(연쇄 이벤트) 방지
         if (level >= 100 && ThreadLocalRandom.current().nextDouble() < 0.15) {
-            triggerAreaMining(player, world, pos);
+            IS_AREA_MINING.set(true);
+            try {
+                triggerAreaMining(player, world, pos);
+            } finally {
+                IS_AREA_MINING.set(false);
+            }
         }
+    }
+
+    private long getOreXP(BlockState state) {
+        if (state.is(Tags.Blocks.ORES_NETHERITE_SCRAP)) return 100L;
+        if (state.is(Tags.Blocks.ORES_DIAMOND))         return 60L;
+        if (state.is(Tags.Blocks.ORES_EMERALD))         return 60L;
+        if (state.is(Tags.Blocks.ORES_GOLD))            return 30L;
+        if (state.is(Tags.Blocks.ORES_LAPIS))           return 30L;
+        if (state.is(Tags.Blocks.ORES_REDSTONE))        return 20L;
+        if (state.is(Tags.Blocks.ORES_IRON))            return 20L;
+        return 10L;
     }
 
     private double extraDropChance(int level) {

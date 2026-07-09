@@ -1,9 +1,10 @@
 package com.gathercraft.gathercraft.skill.handler;
 
+import com.gathercraft.gathercraft.achievement.AchievementManager;
 import com.gathercraft.gathercraft.particle.ParticleUtil;
+import com.gathercraft.gathercraft.quest.QuestManager;
 import com.gathercraft.gathercraft.skill.SkillData;
 import com.gathercraft.gathercraft.skill.SkillManager;
-import com.gathercraft.gathercraft.skill.SkillPointStat;
 import com.gathercraft.gathercraft.skill.SkillType;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
@@ -11,19 +12,23 @@ import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.projectile.FishingHook;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraftforge.event.entity.EntityJoinLevelEvent;
 import net.minecraftforge.event.entity.player.ItemFishedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
+import java.lang.reflect.Field;
 import java.util.List;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 낚시 스킬 핸들러
  * - 낚시로 아이템 획득 시 XP 적립
- * - 레벨별 보너스: 쓰레기 드롭 감소, 희귀 아이템 확률, 추가 물고기, 보물 확률
+ * - 레벨별 보너스: 쓰레기 드롭 감소, 희귀 아이템 확률, 추가 물고기, 보물 확률, 낚시 속도
  * - 모션: SPLASH + UNDERWATER (항상), TOTEM (희귀 아이템)
  */
 public class FishingHandler {
@@ -37,7 +42,9 @@ public class FishingHandler {
 
         SkillManager.addXP(player, SkillType.FISHING, 15);
 
-        // 항상: SPLASH + UNDERWATER 파티클
+        QuestManager.progress(player, "fish", "ANY", drops.size());
+        AchievementManager.incrementAndCheck(player, "fish", drops.size(), "fish_100");
+
         if (player.level() instanceof ServerLevel serverLevel) {
             double px = player.getX();
             double py = player.getY();
@@ -48,17 +55,14 @@ public class FishingHandler {
 
         int level = SkillData.getLevel(player, SkillType.FISHING);
 
-        // 10레벨: 쓰레기 드롭 감소 (스탯 포인트 누적 반영)
-        float junkStatBonus = SkillData.getStatValue(player, SkillPointStat.FISHING_JUNK_REDUCE);
-        float fishingRareStat = SkillData.getStatValue(player, SkillPointStat.FISHING_RARE);
-        if (level >= 10 || junkStatBonus > 0) {
-            final double removeChance = junkRemoveChance(level) + junkStatBonus + fishingRareStat;
+        // 10레벨: 쓰레기 드롭 감소
+        if (level >= 10) {
+            final double removeChance = junkRemoveChance(level);
             drops.removeIf(stack -> isJunk(stack) && ThreadLocalRandom.current().nextDouble() < removeChance);
         }
 
-        // 60레벨: 추가 물고기 드롭 (스탯 포인트 누적 반영)
-        float fishDropStat = SkillData.getStatValue(player, SkillPointStat.FISHING_FISH_DROP);
-        if (level >= 60 && ThreadLocalRandom.current().nextDouble() < 0.25 + fishDropStat) {
+        // 60레벨: 추가 물고기 드롭
+        if (level >= 60 && ThreadLocalRandom.current().nextDouble() < 0.25) {
             drops.add(new ItemStack(Items.COD));
         }
 
@@ -77,12 +81,59 @@ public class FishingHandler {
             drops.add(createAwakenedFishingRod());
         }
 
-        // 희귀 아이템 낚임 시 TOTEM 파티클
         boolean hasRare = drops.stream().anyMatch(this::isRare);
         if (hasRare && player.level() instanceof ServerLevel serverLevel) {
             ParticleUtil.spawnBurst(serverLevel,
                 player.getX(), player.getY() + 1, player.getZ(),
                 ParticleTypes.TOTEM_OF_UNDYING, 30, 0.5);
+        }
+    }
+
+    // FISHING_SPEED: 낚시 부표 생성 시 대기시간 단축
+    @SubscribeEvent
+    public void onEntityJoinLevel(EntityJoinLevelEvent event) {
+        if (!(event.getEntity() instanceof FishingHook hook)) return;
+        if (!(hook.getOwner() instanceof ServerPlayer player)) return;
+
+        int level = SkillData.getLevel(player, SkillType.FISHING);
+        float reduction;
+        if (level >= 90) reduction = 0.65f;
+        else if (level >= 60) reduction = 0.40f;
+        else if (level >= 30) reduction = 0.20f;
+        else return;
+
+        try {
+            Field f;
+            try {
+                f = FishingHook.class.getDeclaredField("timeUntilHooked");
+            } catch (NoSuchFieldException e) {
+                f = FishingHook.class.getDeclaredField("f_36102_");
+            }
+            f.setAccessible(true);
+            int current = f.getInt(hook);
+            f.setInt(hook, Math.max(20, (int)(current * (1f - reduction))));
+        } catch (Exception ignored) {}
+
+        // [5] 50레벨: 인챈트된 낚싯대 효과 강화 (인챈트 1레벨당 10% 추가 감소)
+        if (level >= 50) {
+            ItemStack rod = player.getMainHandItem();
+            int lureLevel = EnchantmentHelper.getItemEnchantmentLevel(Enchantments.FISHING_SPEED, rod);
+            int luckLevel = EnchantmentHelper.getItemEnchantmentLevel(Enchantments.FISHING_LUCK, rod);
+            int totalLevels = lureLevel + luckLevel;
+            if (totalLevels > 0) {
+                float enchantReduction = Math.min(totalLevels * 0.10f, 0.50f);
+                try {
+                    Field ef;
+                    try {
+                        ef = FishingHook.class.getDeclaredField("timeUntilHooked");
+                    } catch (NoSuchFieldException ex) {
+                        ef = FishingHook.class.getDeclaredField("f_36102_");
+                    }
+                    ef.setAccessible(true);
+                    int cur = ef.getInt(hook);
+                    ef.setInt(hook, Math.max(20, (int)(cur * (1f - enchantReduction))));
+                } catch (Exception ignored) {}
+            }
         }
     }
 
@@ -103,10 +154,6 @@ public class FishingHandler {
             && !stack.is(Items.PUFFERFISH);
     }
 
-    /**
-     * 낚시 100레벨 각성 보상: 고유 인챈트 낚시대.
-     * Luck of the Sea III + Lure III + Unbreaking III + Mending.
-     */
     private ItemStack createAwakenedFishingRod() {
         ItemStack rod = new ItemStack(Items.FISHING_ROD);
 

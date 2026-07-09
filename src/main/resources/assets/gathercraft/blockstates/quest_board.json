@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "gathercraft:block/quest_board" }
+  }
+}

@@ -1,7 +1,9 @@
 package com.gathercraft.gathercraft.client.overlay;
 
+import com.gathercraft.gathercraft.client.keybinding.KeyBindings;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.renderer.GameRenderer;
@@ -29,7 +31,7 @@ public class SkillBarOverlay {
     // ---- 슬롯 목록 (향후 확장용) ----
     public static final List<SkillSlotEntry> SLOTS = new ArrayList<>();
     static {
-        SLOTS.add(new SkillSlotEntry("R", 0xFF4488FF, 0));
+        SLOTS.add(new SkillSlotEntry(KeyBindings.DASH, 0xFF4488FF, 0));
     }
 
     private static final int RADIUS = 13;
@@ -121,12 +123,13 @@ public class SkillBarOverlay {
             drawCooldownArc(graphics, cx, cy, RADIUS, progress);
         }
 
-        // "R" 텍스트
+        // 키 레이블 텍스트 (키 재설정 시 자동 반영)
         Minecraft mc = Minecraft.getInstance();
+        String label = slot.getLabel();
         int textColor = isReady ? 0xFFFFFF : 0xAAAAAA;
-        int textX = (int)(cx - mc.font.width(slot.label) / 2f);
+        int textX = (int)(cx - mc.font.width(label) / 2f);
         int textY = (int)(cy - mc.font.lineHeight / 2f);
-        graphics.drawString(mc.font, slot.label, textX, textY, textColor, true);
+        graphics.drawString(mc.font, label, textX, textY, textColor, true);
 
         // 쿨타임 남은 시간 (초) - 쿨타임 중일 때만 표시
         if (!isReady) {
@@ -192,14 +195,21 @@ public class SkillBarOverlay {
 
     // ---- 확장 가능한 슬롯 구조 ----
     public static class SkillSlotEntry {
-        public final String label;
+        private final KeyMapping keyMapping;
         public final int readyColor;
         public final int slotIndex;
 
-        public SkillSlotEntry(String label, int readyColor, int slotIndex) {
-            this.label = label;
+        public SkillSlotEntry(KeyMapping keyMapping, int readyColor, int slotIndex) {
+            this.keyMapping = keyMapping;
             this.readyColor = readyColor;
             this.slotIndex = slotIndex;
+        }
+
+        /** 현재 설정된 키 이름을 반환 — 키 재설정 시 자동으로 반영된다 */
+        public String getLabel() {
+            String name = keyMapping.getKey().getDisplayName().getString();
+            // 슬롯에 표시하기 위해 3자 초과 시 앞 3자만 사용
+            return name.length() > 3 ? name.substring(0, 3) : name;
         }
 
         public float getRenderX(int screenWidth) {

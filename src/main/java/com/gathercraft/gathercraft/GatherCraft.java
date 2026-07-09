@@ -1,13 +1,17 @@
 package com.gathercraft.gathercraft;
 
+import com.gathercraft.gathercraft.block.QuestBoardBlock;
 import com.gathercraft.gathercraft.client.ClientSetup;
 import com.gathercraft.gathercraft.command.GatherCraftCommand;
 import com.gathercraft.gathercraft.command.SkillCommand;
+import com.gathercraft.gathercraft.command.TpaCommand;
 import com.gathercraft.gathercraft.item.SkillBookItem;
 import com.gathercraft.gathercraft.network.PacketHandler;
 import com.gathercraft.gathercraft.skill.handler.*;
 import com.mojang.logging.LogUtils;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.Block;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.eventbus.api.IEventBus;
@@ -16,6 +20,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.registries.RegistryObject;
 import org.slf4j.Logger;
 
 @Mod(GatherCraft.MOD_ID)
@@ -28,6 +33,15 @@ public class GatherCraft {
     public static final DeferredRegister<Item> ITEMS =
         DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID);
 
+    // 블록 DeferredRegister
+    public static final DeferredRegister<Block> BLOCKS =
+        DeferredRegister.create(ForgeRegistries.BLOCKS, MOD_ID);
+
+    public static final RegistryObject<Block> QUEST_BOARD =
+        BLOCKS.register("quest_board", QuestBoardBlock::new);
+    public static final RegistryObject<Item> QUEST_BOARD_ITEM =
+        ITEMS.register("quest_board", () -> new BlockItem(QUEST_BOARD.get(), new Item.Properties()));
+
     static {
         ITEMS.register("skill_book", () -> SkillBookItem.INSTANCE);
     }
@@ -36,8 +50,9 @@ public class GatherCraft {
         IEventBus modBus = context.getModEventBus();
         IEventBus forgeBus = MinecraftForge.EVENT_BUS;
 
-        // 아이템 등록
+        // 아이템/블록 등록
         ITEMS.register(modBus);
+        BLOCKS.register(modBus);
 
         PacketHandler.register();
 
@@ -49,6 +64,9 @@ public class GatherCraft {
             );
             net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
                 com.gathercraft.gathercraft.client.overlay.FloatingCombatText.class
+            );
+            net.minecraftforge.common.MinecraftForge.EVENT_BUS.register(
+                new com.gathercraft.gathercraft.client.overlay.TitleNameTagRenderer()
             );
         });
 
@@ -65,6 +83,7 @@ public class GatherCraft {
         forgeBus.register(new SkillBookHandler());
         forgeBus.register(new SkillCommand());
         forgeBus.register(new GatherCraftCommand());
+        forgeBus.register(new TpaCommand());
 
         LOGGER.info("GatherCraft initialized - 9 skill RPG mod loaded!");
     }

@@ -177,7 +177,8 @@ src/main/java/com/gathercraft/gathercraft/
 ├── GatherCraft.java              # 메인 모드 클래스, 핸들러 등록
 ├── command/
 │   ├── SkillCommand.java         # /skill, /skill <name>
-│   └── GatherCraftCommand.java   # /gathercraft test ...
+│   ├── GatherCraftCommand.java   # /gathercraft test ...
+│   └── TpaCommand.java           # /tpaccept, /tpdeny (채팅 클릭 메시지의 RUN_COMMAND 대상)
 ├── item/
 │   └── SkillBookItem.java        # 스킬 책 아이템 (isFoil=true, use()→GUI 오픈)
 ├── particle/
@@ -191,12 +192,28 @@ src/main/java/com/gathercraft/gathercraft/
 │       ├── SkillXpUpdatePacket.java      # XP/레벨업/티어업 동기화 (S2C, ID 3)
 │       ├── SkillPointOfferPacket.java    # 레벨업 스탯 선택지 3개 전달 (S2C, ID 4)
 │       ├── SkillPointChoicePacket.java   # 스탯 선택 결과 전달 (C2S, ID 5)
-│       └── DamageTextPacket.java         # 부유 데미지 텍스트 전송 (S2C, ID 6)
+│       ├── DamageTextPacket.java         # 부유 데미지 텍스트 전송 (S2C, ID 6)
+│       ├── WaypointSavePacket.java       # 현재 위치 웨이포인트 저장 (C2S, ID 7)
+│       ├── WaypointDeletePacket.java     # 웨이포인트 삭제 (C2S, ID 8)
+│       ├── WaypointTeleportPacket.java   # 웨이포인트로 텔레포트 (C2S, ID 9)
+│       ├── WaypointSyncPacket.java       # 웨이포인트 목록 동기화 (S2C, ID 10)
+│       ├── TitleSyncPacket.java          # 칭호 해금/착용 목록 동기화 (S2C, ID 11)
+│       ├── TitleEquipPacket.java         # 칭호 착용/해제 토글 (C2S, ID 12)
+│       ├── TpaRequestPacket.java         # TPA 요청 전송 (C2S, ID 13)
+│       ├── TpaResponsePacket.java        # TPA 수락/거절 (C2S, ID 14)
+│       ├── TpaAskPacket.java             # TPA 요청 수신 알림 (S2C, ID 15)
+│       ├── TitleBroadcastPacket.java     # 착용 칭호를 주변 플레이어에게 브로드캐스트 (S2C, ID 16)
+│       ├── QuestSyncPacket.java          # 오늘의 퀘스트 3개 동기화 (S2C, ID 17)
+│       ├── OpenQuestBoardPacket.java     # 스킬 책 GUI를 퀘스트 탭(4)으로 오픈 (S2C, ID 18)
+│       ├── AchievementSyncPacket.java    # 업적 해금 목록 + 수령 목록 + 카운터 동기화 (S2C, ID 19)
+│       ├── QuestClaimPacket.java         # 퀘스트 보상 수령 요청 (C2S, ID 20)
+│       └── AchievementClaimPacket.java   # 업적 보상 수령 요청 (C2S, ID 21)
 ├── client/
 │   ├── ClientSetup.java          # 오버레이/키바인딩 등록 (modBus, 클라이언트 전용)
 │   ├── gui/
-│   │   ├── SkillBookScreen.java  # 스킬 책 GUI (3x3 그리드, 티어색상, XP바, 툴팁)
-│   │   └── SkillPointScreen.java # 레벨업 스탯 선택 팝업 (3개 버튼, 0.5초 딜레이, 누적 툴팁)
+│   │   ├── SkillBookScreen.java  # 스킬 책 GUI (6탭: 스킬 현황 / 웨이포인트 / 칭호 / 텔포 / 퀘스트 / 업적), `SkillBookScreen(int initialTab)` 생성자 오버로드, 칭호/업적 탭 마우스 휠 스크롤(enableScissor 클리핑 + 스크롤바)
+│   │   ├── SkillPointScreen.java # 레벨업 스탯 선택 팝업 (3개 버튼, 0.5초 딜레이, 누적 툴팁)
+│   │   └── TpaRequestScreen.java # TPA 요청 수신 팝업 (0.5초 딜레이, 수락/거절 버튼, TpaResponsePacket 전송)
 │   ├── keybinding/
 │   │   ├── KeyBindings.java      # R키 대시 KeyMapping 정의
 │   │   └── ClientKeyHandler.java # forgeBus ClientTickEvent → 패킷 전송, 바닐라 XP바 숨김
@@ -204,7 +221,8 @@ src/main/java/com/gathercraft/gathercraft/
 │       ├── DamageFlashOverlay.java  # 화면 가장자리 빨간 플래시 렌더링
 │       ├── SkillBarOverlay.java     # 원형 쿨타임 바 + SkillSlotEntry
 │       ├── SkillXpBarOverlay.java   # 화면 상단 스킬 XP 바 (색상/레벨업/티어업 애니메이션)
-│       └── FloatingCombatText.java  # 부유 전투 텍스트 (데미지/HP, RenderLevelStageEvent)
+│       ├── FloatingCombatText.java  # 부유 전투 텍스트 (데미지/HP, RenderLevelStageEvent)
+│       └── TitleNameTagRenderer.java # 착용 칭호를 이름표 위에 렌더링 (RenderNameTagEvent, forgeBus)
 └── skill/
     ├── SkillType.java            # 9개 스킬 enum (color 필드, findByName())
     ├── SkillTier.java            # 10개 티어 enum (color/textColor 필드)
@@ -224,8 +242,29 @@ src/main/java/com/gathercraft/gathercraft/
         ├── DefenseHandler.java
         ├── SmithingHandler.java
         ├── EnchantingHandler.java
-        ├── PlayerTickHandler.java   # 채광/벌목 Haste, 각성 아이템 DIG_SPEED, 방어 속성, 대시 잔상, 로그인/로그아웃/리스폰/Clone 처리
+        ├── PlayerTickHandler.java   # 채광/벌목 Haste, 각성 아이템 DIG_SPEED, 방어 속성, 대시 잔상, 로그인/로그아웃/리스폰/Clone 처리, 웨이포인트 로그인 동기화
         └── SkillBookHandler.java    # 핫바 8번 슬롯 스킬 책 상시 유지
+waypoint/
+├── WaypointData.java          # 웨이포인트 1개 데이터 (name/icon/dim/x/y/z/yaw), NBT 직렬화
+├── WaypointManager.java       # 저장/조회/삭제/텔레포트 (SkillData.getRoot() 하위 "waypoints" ListTag, 최대 10개)
+└── WaypointClientCache.java   # 클라이언트 캐시 (@OnlyIn(Dist.CLIENT), WaypointSyncPacket 수신 시 갱신)
+title/
+├── Title.java                 # 칭호 17종 enum (id/displayName/requiredSkill/requiredLevel), isUnlocked()/conditionText()/byId()
+├── TitleManager.java          # 해금 체크(checkAndUnlock)/착용 토글(equip)/보유 판정(hasTitle)/XP배율(getXPMultiplier) (SkillData.getRoot() 하위 "unlocked_titles"/"equipped_title")
+├── TitleClientCache.java      # 본인 칭호 클라이언트 캐시 (@OnlyIn(Dist.CLIENT), TitleSyncPacket 수신 시 갱신, 스킬 책 GUI용)
+└── TitleNameTagCache.java     # 주변 플레이어 칭호 캐시 (@OnlyIn(Dist.CLIENT), Map<UUID,String>, TitleBroadcastPacket 수신 시 갱신, 이름표 렌더링용)
+quest/
+├── QuestData.java             # 퀘스트 1개 데이터 (id/description/skillType/actionType/targetBlock/goal/progress/completed/claimed/rewardXP/rewardExpBottles), NBT 직렬화
+├── QuestPool.java             # 쉬움/보통/어려움 각 8종 풀(총 24종), `getDailyQuests(long seed)`로 시드 기반 1개씩 선택
+├── QuestManager.java          # 날짜(yyyyMMdd) 기반 자동 갱신(getQuests/refreshQuests), 진행도 적립(progress, ANY/BOSS/블록·몹ID contains 매칭), 보상 수령(claim, 스킬 XP + 경험치 병 스폰) (SkillData.getRoot() 하위 "quest_date"/"quest_0~2")
+└── QuestClientCache.java      # 클라이언트 캐시 (@OnlyIn(Dist.CLIENT), QuestSyncPacket 수신 시 갱신)
+achievement/
+├── AchievementManager.java    # 업적 15종 정의(record Achievement에 condition 필드 포함, Category enum), has()/unlock()(해금 기록+서버 공지+클릭형 채팅만, 보상 지급 없음)/claim()(보상 지급: XP+경험치 병+파티클)/isClaimed()/getCondition()/getGoal()/getCounterKey()/getRewardText()(모두 record 필드 위임)/incrementAndCheck()(카운터)/checkAllSkillLevel() (SkillData.getRoot() 하위 "ach_*"/"ach_claimed_*"/"ach_cnt_*")
+└── AchievementClientCache.java # 클라이언트 캐시 (@OnlyIn(Dist.CLIENT), 해금 목록 + 수령 목록 + 카운터 맵, AchievementSyncPacket 수신 시 갱신)
+block/
+└── QuestBoardBlock.java       # 이 모드 최초의 커스텀 블록. 우클릭 시 QuestSyncPacket + OpenQuestBoardPacket 전송 (bookshelf 텍스처, cube_all 모델)
+tpa/
+└── TpaManager.java             # TPA 요청/응답, 60초 쿨다운·60초 만료, 차원 간 텔포 (WaypointManager.teleport() 패턴 재사용), NBT 저장 없음(런타임 Map)
 ```
 
 # 주요 API 패턴
@@ -254,6 +293,29 @@ src/main/java/com/gathercraft/gathercraft/
 - 다음 스탯 offer 전송: `SkillManager.sendSkillPointOffer(sp, skill)` (로그인 핸들러에서도 사용)
 - 방어 속성 즉시 갱신: `PlayerTickHandler.applyDefenseAttributesNow(sp)` (레벨업 시 자동 호출됨)
 - 데이터 로드/저장: `SkillData.loadFromNBT(player)` / `SkillData.saveToNBT(player)`
+- 웨이포인트 목록 조회: `WaypointManager.getAll(player)` → `List<WaypointData>`
+- 웨이포인트 저장/삭제/텔포: `WaypointManager.add(player, data)`(최대 10개, 초과 시 false) / `WaypointManager.delete(player, index)` / `WaypointManager.teleport(serverPlayer, index)`
+- 웨이포인트 목록 동기화: `PacketHandler.sendToPlayer(player, new WaypointSyncPacket(WaypointManager.getAll(player)))`
+- 칭호 목록/착용 조회: `TitleManager.getUnlocked(player)` → `List<String>` / `TitleManager.getEquipped(player)` → `String`
+- 칭호 해금 체크(멱등): `TitleManager.checkAndUnlock(serverPlayer)` (레벨업 시 `SkillManager.onLevelUp()`, 로그인 시 `PlayerTickHandler.onPlayerLogin()`에서 호출)
+- 칭호 착용/해제: `TitleManager.equip(serverPlayer, titleId)` (이미 착용 중이면 해제하는 토글)
+- 칭호 표시명/조건 텍스트: `TitleManager.getDisplayName(id)` / `TitleManager.getConditionText(id)`
+- 칭호 보유 판정(착용 여부 무관): `TitleManager.hasTitle(player, id)`
+- 칭호 보유 기반 전 스킬 XP 배율: `TitleManager.getXPMultiplier(player)` → all_100 1.15 / all_50 1.05 / 없으면 1.0 (`SkillManager.addXP()`에서 자동 적용, 스킬별 보너스는 각 핸들러에서 `hasTitle()`로 개별 처리)
+- 칭호 브로드캐스트(이름표용): `PacketHandler.sendToPlayer(nearby, new TitleBroadcastPacket(uuid, equippedId))` (빈 문자열이면 클라이언트에서 캐시 제거)
+- TPA 요청/응답: `TpaManager.request(serverPlayer, targetName)` / `TpaManager.respond(serverPlayer, accept)`
+- TPA 위생 정리: `TpaManager.clearPlayer(uuid)` (로그아웃 시 호출)
+- 오늘의 퀘스트 조회(날짜 갱신 포함): `QuestManager.getQuests(player)` → `List<QuestData>` (3개)
+- 퀘스트 진행도 적립: `QuestManager.progress(serverPlayer, actionType, target, amount)` (`target.equals("ANY")` 이거나 `contains()` 매칭 시 적립, 완료 시 클릭형 채팅 자동 발송)
+- 퀘스트 보상 수령: `QuestManager.claim(serverPlayer, index)` (0~2)
+- 업적 보유 판정: `AchievementManager.has(player, id)`
+- 업적 해금(멱등): `AchievementManager.unlock(serverPlayer, id)` (서버 전체 공지 + 클릭형 채팅만, 보상은 지급하지 않음)
+- 업적 보상 수령: `AchievementManager.claim(serverPlayer, id)` (해금 후에만 가능, 1회 한정 — XP + 경험치 병 + 파티클 지급)
+- 업적 수령 여부 판정: `AchievementManager.isClaimed(player, id)`
+- 업적 조건/목표/카운터키/보상텍스트 조회: `AchievementManager.getCondition/getGoal/getCounterKey/getRewardText(id)` (모두 `Achievement` record 필드 위임)
+- 업적 카운터 적립+체크: `AchievementManager.incrementAndCheck(serverPlayer, counter, amount, checkIds...)`
+- 전 스킬 레벨 기반 종합 업적 체크: `AchievementManager.checkAllSkillLevel(serverPlayer)` (`SkillManager.onLevelUp()`에서 매 레벨업마다 호출)
+- 업적 동기화 패킷 생성: `AchievementManager.buildSyncPacket(player)` → `AchievementSyncPacket` (unlocked/claimed/counters 3필드)
 
 # 명령어
 - `/skill` — 전체 스킬 현황
@@ -262,12 +324,22 @@ src/main/java/com/gathercraft/gathercraft/
 - `/gathercraft test all <level>` — 전체 스킬 레벨 설정 (OP 2)
 - `/gathercraft test reset` — 전체 스킬 초기화 (OP 2)
 - `/gathercraft test auto` — 인게임 자동 테스트 실행 (XP 공식·광물/몹 XP·NBT·PlayerClone 검증, OP 2)
+- `/gathercraft quest claim <0|1|2>` — 퀘스트 보상 수령 (권한 제한 없음)
+- `/gathercraft giveboard` — 퀘스트 게시판 블록 지급 (OP 2)
+- `/gathercraft achievement claim <id>` — 업적 보상 수령 (권한 제한 없음)
+- `/tpaccept`, `/tpdeny` — TPA 요청 수락/거절 (권한 제한 없음, 채팅 클릭 메시지의 RUN_COMMAND 대상)
 
 # 빌드
 ```bash
 ./gradlew clean build
 ```
-결과물: `build/libs/gathercraft-1.3.0.jar`
+결과물: `build/libs/gathercraft-1.6.2.jar`
+
+# 릴리스 아카이브
+`releases/` 폴더에 버전별 jar를 누적 보관한다. **버전을 올리고 빌드에 성공할 때마다** 새 jar를 이 폴더에 복사한다 (기존 파일은 덮어쓰지 않고 계속 쌓아 과거 버전도 남겨둠).
+```bash
+cp build/libs/gathercraft-<버전>.jar releases/
+```
 
 ---
 
@@ -287,7 +359,13 @@ src/main/java/com/gathercraft/gathercraft/
 | v1.0.0 | 스킬 포인트 시스템: 레벨업 시 스탯 선택 팝업, SkillPointStat enum 36개, S2C/C2S 패킷 2개, SkillPointScreen GUI, 9개 핸들러 스탯 반영, 로그인 시 대기 offer 재전송 |
 | v1.1.0 | 부유 전투 텍스트: 몬스터 공격 시 머리 위 데미지 표시, 크리티컬 강조, 2.5초 페이드 아웃 |
 | v1.2.0 | XP 3단계 티어 공식, 광석/몹 희귀도별 XP, 사냥/요리/농사/낚시/마법부여 신규 기능, 재접속 데이터 초기화 버그 수정 |
-| v1.3.0 | IsDashing 고착 버그 수정, 채광 각성 연쇄 이벤트 방지(ThreadLocal), 즉사 데미지 텍스트 수정, 대시 키 레이블 동적화, NBT 틱 읽기 최적화(dashingPlayers Set) |
+| v1.3.0 | IsDashing 고착 버그 수정, 채광 각성 연쇄 이벤트 방지(ThreadLocal), 즉사 데미지 텍스트 수정, 대시 키 레이블 동적화, NBT 틱 읽기 최적화(dashingPlayers Set), `/gathercraft test auto` 인게임 자동 테스트 커맨드 추가 |
+| v1.4.0 | 웨이포인트 시스템: 스킬 책 탭 UI, 좌표 저장(최대 10개), 차원 간 텔포, S2C 동기화 |
+| v1.5.0 | 스킬 책 4탭 UI 전면 개편: 웨이포인트(저장/차원 간 텔포), 칭호 시스템(17개), TPA(플레이어 간 텔포 요청/수락/거절) |
+| v1.5.1 | 칭호 이름표 표시, 칭호 보유 효과, 리셋 시 칭호 초기화, TitleBroadcastPacket |
+| v1.6.0 | 일일 퀘스트(24종 풀, 쉬움/보통/어려움), 업적 시스템(15개, 서버 전체 공지), 퀘스트 게시판 블록(bookshelf 텍스처, 우클릭으로 퀘스트 탭 오픈), 스킬 책 6탭 UI |
+| v1.6.1 | 스킬 책 업적/칭호 탭 마우스 휠 스크롤 + 스크롤바 + 클리핑 |
+| v1.6.2 | 업적 탭 전면 개선: 조건 설명/진행도바/툴팁/카테고리 구분선, 보상 수령 시스템(달성/미수령/완료 상태 분리), AchievementClaimPacket |
 
 ---
 
@@ -302,6 +380,37 @@ src/main/java/com/gathercraft/gathercraft/
 ## 요리
 - 40/70레벨: 정확한 스펙 레벨의 포화도 증가 (현재: 30/60/90레벨로 구현)
 - ItemSmeltedEvent: 서버 환경에서 발동 여부 실제 테스트 필요
+
+---
+
+# ⚠️ 설계 노트
+
+## all_100 이동속도 보너스 수치 불일치
+`PlayerTickHandler`에서 `all_100` 보유 시 30틱마다 `MobEffectInstance(MOVEMENT_SPEED, 40, 0, ...)`(Speed I, 앰플리파이어 0)을 부여한다. 기획 설명은 "+5% 이동속도"이지만 vanilla Speed I의 실제 효과는 약 +20%로 정확히 일치하지 않는다 — 레벨 기반 커스텀 AttributeModifier 대신 바닐라 포션 효과로 간단히 구현한 결과.
+
+## TitleNameTagRenderer 등록 위치
+`RenderNameTagEvent`는 forge 이벤트버스 클라이언트 전용 이벤트라 `ClientSetup`(modBus 전용, `RegisterGuiOverlaysEvent`/`RegisterKeyMappingsEvent`만 처리)이 아니라, 기존 `FloatingCombatText`와 동일하게 `GatherCraft.java`의 `DistExecutor.unsafeRunWhenOn(Dist.CLIENT, ...)` 블록에서 `MinecraftForge.EVENT_BUS.register(new TitleNameTagRenderer())`로 직접 등록한다.
+
+## RenderNameTagEvent의 "추가 줄" 제약
+`RenderNameTagEvent`는 단일 `Component`만 교체 가능하고 별도의 "이름표 위에 추가 줄"을 그리는 훅이 없다. 따라서 vanilla 이름표는 그대로 두고(`Result` 미변경), 같은 이벤트의 `PoseStack`/`MultiBufferSource`/`packedLight`를 이용해 vanilla 이름표보다 위(`bbHeight+0.5+0.3`)에 칭호 텍스트를 별도로 `pushPose/popPose`하여 덧그리는 방식으로 구현했다 (`client/overlay/TitleNameTagRenderer.java`).
+
+## GatherCraftCommand 권한 구조 변경 (v1.6.0)
+기존에는 루트 `literal("gathercraft")`에 `.requires(src -> src.hasPermission(2))`가 걸려 있어 모든 하위 명령(`test` 포함)이 OP 2를 요구했다. `/gathercraft quest claim`은 일반 플레이어도 사용해야 하므로, `.requires()`를 루트에서 제거하고 `test` 서브트리와 `giveboard`에 개별로 옮겼다. Brigadier는 상위 노드의 `requires()`를 만족해야 하위 노드 파싱이 진행되므로, 루트에 권한을 걸면 하위 전체가 상속받아 차단된다는 점에 유의.
+
+## 블록 등록 인프라 신설 (v1.6.0)
+v1.5.1까지 이 모드는 블록이 하나도 없는 순수 아이템/스킬 모드였다 (`DeferredRegister<Block>` 부재, `lang/` 리소스 없음). `QuestBoardBlock` 추가를 계기로 `GatherCraft.java`에 `DeferredRegister<Block> BLOCKS`를 신설하고, 기존 아이템(`skill_book`)의 싱글턴+람다 등록 방식과 달리 `RegistryObject`를 필드로 저장하는 표준 패턴을 사용했다 (`giveboard` 명령어 등에서 아이템 참조가 필요하기 때문). `lang/ko_kr.json`·`en_us.json`도 이때 처음 생성되었으며, 기존 하드코딩 아이템명(`skill_book`)은 마이그레이션하지 않았다.
+
+## 칭호 탭 2컬럼 + 스크롤 조합 (v1.6.1)
+칭호 탭은 `col = i/rows, row = i%rows` (컬럼 우선 채움) 방식으로 17종을 2컬럼에 배치한다. 여기에 스크롤을 추가하면서 `rows`(컬럼당 전체 행 수 = `ceil(17/2)`)는 스크롤과 무관하게 고정하고, 화면에는 `titleScrollOffset` 기준 윈도우(`row`~`row+TITLE_VISIBLE_ROWS`)만 슬라이싱해서 그린다. 컬럼1의 인덱스는 항상 `row + totalRows`로 계산되므로(스크롤 여부와 무관하게 원래의 컬럼 우선 인덱싱 규칙을 그대로 보존), 스크롤해도 각 항목이 원래 있어야 할 컬럼에서 어긋나지 않는다. `renderTitleTab`과 `handleTitleClick` 양쪽이 동일한 윈도우 계산을 공유해야 클릭 좌표가 어긋나지 않는다.
+
+## 업적 보상 수령 시스템 설계 (v1.6.2)
+`getCondition()`/`getGoal()`/`getCounterKey()`는 별도 switch문 대신 `Achievement` record의 `condition`/`counterGoal`/`counterKey` 필드에 위임하는 방식으로 구현했다. `counterGoal`/`counterKey`는 이미 `ALL` 리스트 생성 시점에 정의되어 있으므로, 별도 switch를 추가하면 두 데이터 소스가 어긋날 위험이 생기기 때문이다(`condition`은 이번에 record에 신규 필드로 추가). 같은 이유로 GUI(`SkillBookScreen`)에서는 `AchievementManager.getGoal()` 등을 거치지 않고 이미 들고 있는 `Achievement` 객체의 필드를 직접 사용한다.
+
+카테고리 구분선과 업적 행은 스펙상 서로 다른 높이(14px/22px)를 제안했지만, v1.6.1에서 만든 스크롤 인프라(`buildAchievementRows()` → 균일한 `rowStride`로 슬라이싱)가 "모든 행이 같은 높이"를 전제로 하므로 구분선도 업적 행과 동일한 22px 슬롯에 맞춰 그린다(가변 높이 도입 시 스크롤/클릭 좌표 계산이 크게 복잡해짐).
+
+## TPA 채팅 클릭 메시지의 한계
+`TpaAskPacket` 수신 시 뜨는 클릭형 채팅 메시지(`§a[수락]`/`§c[거절]`)는 바닐라 `ClickEvent`가 `RUN_COMMAND`(`/tpaccept`, `/tpdeny`)만 지원하는 제약상 **채팅창(T/Enter로 연 상태)이 열려 있을 때만 클릭이 히트테스트된다.** 평상시 자동으로 사라지는 채팅 HUD는 클릭에 반응하지 않는 바닐라 공통 제약이다.
+이를 보완하기 위해 `TpaAskPacket.handle()`은 채팅 메시지와 동시에 `TpaRequestScreen` 팝업(0.5초 딜레이, 다른 화면이 열려 있으면 재대기)도 함께 띄운다. 팝업 버튼이 `TpaResponsePacket`의 실질적인 발신 경로이며, 채팅 클릭 경로는 `/tpaccept`·`/tpdeny` 명령어를 통해 별도로 동작한다.
 
 ---
 

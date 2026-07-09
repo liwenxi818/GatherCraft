@@ -1,5 +1,7 @@
 package com.gathercraft.gathercraft.skill.handler;
 
+import com.gathercraft.gathercraft.achievement.AchievementManager;
+import com.gathercraft.gathercraft.quest.QuestManager;
 import com.gathercraft.gathercraft.skill.SkillData;
 import com.gathercraft.gathercraft.skill.SkillManager;
 import com.gathercraft.gathercraft.skill.SkillPointStat;
@@ -10,21 +12,26 @@ import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import javax.annotation.Nullable;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
@@ -37,6 +44,62 @@ public class LumberjackHandler {
 
     private static final int MAX_CHAIN_BLOCKS = 64;
 
+    // [1] 도끼 내구도 추적 (TickEvent 기반)
+    private final Map<UUID, Integer> prevAxeDamage = new HashMap<>();
+
+    @SubscribeEvent
+    public void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) return;
+        if (!(event.player instanceof ServerPlayer player)) return;
+
+        ItemStack stack = player.getMainHandItem();
+        UUID uuid = player.getUUID();
+
+        if (!stack.isEmpty() && stack.isDamageableItem() && stack.getItem() instanceof AxeItem) {
+            int currentDamage = stack.getDamageValue();
+            Integer prev = prevAxeDamage.get(uuid);
+            if (prev != null && currentDamage > prev) {
+                int level = SkillData.getLevel(player, SkillType.LUMBERJACK);
+                double chance = level >= 60 ? 0.50 : level >= 20 ? 0.20 : 0.0;
+                if (chance > 0 && ThreadLocalRandom.current().nextDouble() < chance) {
+                    stack.setDamageValue(prev);
+                }
+            }
+            prevAxeDamage.put(uuid, stack.getDamageValue());
+        } else {
+            prevAxeDamage.remove(uuid);
+        }
+    }
+
+    // [2] 나뭇잎 드롭 확률 증가 (30레벨 5%, 70레벨 10%)
+    @SubscribeEvent
+    public void onLeafBreak(BlockEvent.BreakEvent event) {
+        if (event.isCanceled()) return;
+        if (!(event.getPlayer() instanceof ServerPlayer player)) return;
+        BlockState state = event.getState();
+        if (!state.is(BlockTags.LEAVES)) return;
+
+        int level = SkillData.getLevel(player, SkillType.LUMBERJACK);
+        if (level < 30) return;
+
+        ServerLevel world = (ServerLevel) event.getLevel();
+        BlockPos pos = event.getPos();
+        double bx = pos.getX() + 0.5;
+        double by = pos.getY() + 0.5;
+        double bz = pos.getZ() + 0.5;
+
+        double chance = level >= 70 ? 0.10 : 0.05;
+
+        if (ThreadLocalRandom.current().nextDouble() < chance) {
+            world.addFreshEntity(new net.minecraft.world.entity.item.ItemEntity(
+                world, bx, by, bz, new ItemStack(Items.APPLE)));
+        }
+        if (ThreadLocalRandom.current().nextDouble() < chance) {
+            world.addFreshEntity(new net.minecraft.world.entity.item.ItemEntity(
+                world, bx, by, bz, new ItemStack(Items.OAK_SAPLING)));
+        }
+    }
+
     @SubscribeEvent
     public void onBlockBreak(BlockEvent.BreakEvent event) {
         if (event.isCanceled()) return;
@@ -45,6 +108,9 @@ public class LumberjackHandler {
         if (!state.is(BlockTags.LOGS)) return;
 
         SkillManager.addXP(player, SkillType.LUMBERJACK, 8);
+
+        QuestManager.progress(player, "lumberjack", "ANY", 1);
+        AchievementManager.incrementAndCheck(player, "log", 1, "log_500");
 
         int level = SkillData.getLevel(player, SkillType.LUMBERJACK);
         ServerLevel world = (ServerLevel) event.getLevel();

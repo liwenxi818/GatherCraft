@@ -1,10 +1,12 @@
 package com.gathercraft.gathercraft.skill;
 
+import com.gathercraft.gathercraft.achievement.AchievementManager;
 import com.gathercraft.gathercraft.network.PacketHandler;
 import com.gathercraft.gathercraft.network.packet.SkillPointOfferPacket;
 import com.gathercraft.gathercraft.network.packet.SkillXpUpdatePacket;
 import com.gathercraft.gathercraft.particle.ParticleUtil;
 import com.gathercraft.gathercraft.skill.handler.PlayerTickHandler;
+import com.gathercraft.gathercraft.title.TitleManager;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
@@ -18,11 +20,11 @@ import java.util.concurrent.ThreadLocalRandom;
 
 public class SkillManager {
 
-    // XP required to go from level N to N+1: (N+1) * 100
-    // Level 0->1: 100 XP, Level 49->50: 5000 XP, Level 99->100: 10000 XP
     public static long xpToNextLevel(int currentLevel) {
         if (currentLevel >= SkillData.MAX_LEVEL) return Long.MAX_VALUE;
-        return (currentLevel + 1) * 100L;
+        if (currentLevel < 20)  return (currentLevel + 1) * 8L;
+        if (currentLevel < 60)  return (currentLevel + 1) * 20L;
+        return (currentLevel + 1) * 50L;
     }
 
     public static void addXP(Player player, SkillType skill, long amount) {
@@ -31,8 +33,10 @@ public class SkillManager {
         int level = SkillData.getLevel(player, skill);
         if (level >= SkillData.MAX_LEVEL) return;
 
+        long finalAmount = (long) (amount * TitleManager.getXPMultiplier(player));
+
         int originalLevel = level;
-        long xp = SkillData.getXP(player, skill) + amount;
+        long xp = SkillData.getXP(player, skill) + finalAmount;
 
         while (level < SkillData.MAX_LEVEL) {
             long needed = xpToNextLevel(level);
@@ -105,11 +109,21 @@ public class SkillManager {
         // 스킬 포인트 offer 예약
         triggerSkillPointOffer(sp, skill);
 
+        // 칭호 자동 해금 체크
+        TitleManager.checkAndUnlock(sp);
+
+        // 업적: 전 스킬 레벨 기반 종합 업적 체크 + 채광/사냥 100레벨 각성 업적
+        AchievementManager.checkAllSkillLevel(sp);
+        if (isAwakening) {
+            if (skill == SkillType.MINING) AchievementManager.unlock(sp, "mining_max");
+            if (skill == SkillType.HUNTING) AchievementManager.unlock(sp, "hunting_max");
+        }
+
         // 방어 스킬: 체력/넉백 속성을 틱 주기 대신 즉시 갱신
         if (skill == SkillType.DEFENSE) {
             PlayerTickHandler.applyDefenseAttributesNow(sp);
         }
-        if (!(player.level() instanceof ServerLevel serverLevel)) return;
+        ServerLevel serverLevel = (ServerLevel) player.level();
 
         double px = sp.getX();
         double py = sp.getY();

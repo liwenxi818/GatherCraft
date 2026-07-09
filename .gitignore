@@ -34,3 +34,9 @@ logs/
 
 # Claude Code local settings (personal permissions)
 .claude/
+
+# Release jar archive (rebuildable build output, kept locally only)
+releases/
+
+# Unrelated third-party mod jars used for local modpack testing
+모드팩에 넣은 모드/

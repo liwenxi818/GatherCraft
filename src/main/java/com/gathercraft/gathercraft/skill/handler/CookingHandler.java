@@ -1,20 +1,22 @@
 package com.gathercraft.gathercraft.skill.handler;
 
+import com.gathercraft.gathercraft.achievement.AchievementManager;
 import com.gathercraft.gathercraft.particle.ParticleUtil;
+import com.gathercraft.gathercraft.quest.QuestManager;
 import com.gathercraft.gathercraft.skill.SkillData;
 import com.gathercraft.gathercraft.skill.SkillManager;
-import com.gathercraft.gathercraft.skill.SkillPointStat;
 import com.gathercraft.gathercraft.skill.SkillType;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.*;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.living.LivingEntityUseItemEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
+
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 요리 스킬 핸들러
@@ -30,7 +32,10 @@ public class CookingHandler {
         ItemStack result = event.getSmelting();
         if (!isCookedFood(result)) return;
 
-        SkillManager.addXP(player, SkillType.COOKING, 5);
+        SkillManager.addXP(player, SkillType.COOKING, 5L * Math.max(1, result.getCount()));
+
+        QuestManager.progress(player, "cook", "ANY", result.getCount());
+        AchievementManager.incrementAndCheck(player, "cook", result.getCount(), "cook_500");
     }
 
     @SubscribeEvent
@@ -47,12 +52,23 @@ public class CookingHandler {
         if (level >= 20 && isBuffFood(item)) {
             applyFoodBuff(player, item, level);
 
-            // 버프 음식 섭취 시 ENTITY_EFFECT 원형 파티클
             if (player.level() instanceof ServerLevel serverLevel) {
                 ParticleUtil.spawnCircle(serverLevel,
                     player.getX(), player.getY(), player.getZ(),
                     ParticleTypes.ENTITY_EFFECT, 1.0, 12, 0.5);
             }
+        }
+
+        // COOKING_SATURATION: 30/60/90레벨 추가 포만감
+        float extraSaturation = extraSaturation(level);
+        if (extraSaturation > 0) {
+            player.getFoodData().eat(0, extraSaturation);
+        }
+
+        // COOKING_EXTRA_BUFF: 50/80/100레벨 확률 추가 버프
+        double extraBuffChance = extraBuffChance(level);
+        if (extraBuffChance > 0 && ThreadLocalRandom.current().nextDouble() < extraBuffChance) {
+            applyExtraBuff(player, item);
         }
 
         if (level >= 100) {
@@ -62,10 +78,8 @@ public class CookingHandler {
     }
 
     private void applyFoodBuff(ServerPlayer player, Item item, int level) {
-        float durationStat  = SkillData.getStatValue(player, SkillPointStat.COOKING_BUFF_DURATION);
-        float ampStat       = SkillData.getStatValue(player, SkillPointStat.COOKING_BUFF_AMPLIFIER);
-        int duration  = (int)(buffDuration(level) * (1.0f + durationStat));
-        int amplifier = (level >= 60 ? 1 : 0) + (int) ampStat;
+        int duration  = buffDuration(level);
+        int amplifier = level >= 60 ? 1 : 0;
 
         if (item == Items.COOKED_BEEF || item == Items.COOKED_PORKCHOP || item == Items.COOKED_MUTTON) {
             player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, duration, amplifier, false, true));
@@ -78,6 +92,31 @@ public class CookingHandler {
         } else if (item == Items.PUMPKIN_PIE || item == Items.CAKE) {
             player.addEffect(new MobEffectInstance(MobEffects.REGENERATION, duration / 4, 0, false, true));
         }
+    }
+
+    private void applyExtraBuff(ServerPlayer player, Item item) {
+        if (item == Items.COOKED_BEEF || item == Items.COOKED_PORKCHOP || item == Items.COOKED_MUTTON
+         || item == Items.COOKED_CHICKEN || item == Items.COOKED_RABBIT) {
+            player.addEffect(new MobEffectInstance(MobEffects.DAMAGE_BOOST, 600, 1, false, true));
+        } else if (item == Items.COOKED_COD || item == Items.COOKED_SALMON) {
+            player.addEffect(new MobEffectInstance(MobEffects.WATER_BREATHING, 600, 0, false, true));
+        } else {
+            player.addEffect(new MobEffectInstance(MobEffects.REGENERATION, 200, 0, false, true));
+        }
+    }
+
+    private float extraSaturation(int level) {
+        if (level >= 90) return 2.0f;
+        if (level >= 60) return 1.0f;
+        if (level >= 30) return 0.4f;
+        return 0f;
+    }
+
+    private double extraBuffChance(int level) {
+        if (level >= 100) return 0.50;
+        if (level >= 80)  return 0.30;
+        if (level >= 50)  return 0.15;
+        return 0;
     }
 
     private boolean isBuffFood(Item item) {

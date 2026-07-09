@@ -1,6 +1,7 @@
 package com.gathercraft.gathercraft.client.keybinding;
 
 import com.gathercraft.gathercraft.client.gui.SkillPointScreen;
+import com.gathercraft.gathercraft.client.gui.TpaRequestScreen;
 import com.gathercraft.gathercraft.client.overlay.SkillXpBarOverlay;
 import com.gathercraft.gathercraft.network.PacketHandler;
 import com.gathercraft.gathercraft.network.packet.DashRequestPacket;
@@ -24,6 +25,7 @@ public class ClientKeyHandler {
 
         // 스킬 포인트 팝업 딜레이 처리 (화면 열려 있어도 카운트다운 유지)
         SkillPointScreen.clientTick();
+        TpaRequestScreen.clientTick();
 
         if (mc.screen != null) return;  // GUI 열려있으면 키 입력 무시
 

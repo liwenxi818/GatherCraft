@@ -11,7 +11,14 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
 public class DashManager {
+
+    /** 현재 대시 중인 플레이어 UUID — 매 틱 NBT 읽기를 피하기 위한 메모리 캐시 */
+    public static final Set<UUID> dashingPlayers = ConcurrentHashMap.newKeySet();
 
     public static final long COOLDOWN_TICKS = 200L;  // 10초
     public static final int INVUL_TICKS = 15;         // 0.75초 무적
@@ -73,6 +80,9 @@ public class DashManager {
             serverLevel.playSound(null, player.blockPosition(),
                 SoundEvents.TRIDENT_THROW, SoundSource.PLAYERS, 1.0f, 1.3f);
         }
+
+        // 메모리 캐시에 등록 (PlayerTickHandler 매 틱 NBT 읽기 방지)
+        dashingPlayers.add(player.getUUID());
 
         // 클라이언트 UI 쿨타임 동기화
         PacketHandler.sendToPlayer(player, new DashSyncPacket(COOLDOWN_TICKS));

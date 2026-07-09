@@ -1,9 +1,21 @@
 package com.gathercraft.gathercraft.skill.handler;
 
+import com.gathercraft.gathercraft.achievement.AchievementManager;
+import com.gathercraft.gathercraft.network.PacketHandler;
+import com.gathercraft.gathercraft.network.packet.QuestSyncPacket;
+import com.gathercraft.gathercraft.network.packet.SkillXpUpdatePacket;
+import com.gathercraft.gathercraft.network.packet.TitleBroadcastPacket;
+import com.gathercraft.gathercraft.network.packet.TitleSyncPacket;
+import com.gathercraft.gathercraft.network.packet.WaypointSyncPacket;
+import com.gathercraft.gathercraft.quest.QuestManager;
 import com.gathercraft.gathercraft.skill.SkillData;
 import com.gathercraft.gathercraft.skill.SkillManager;
 import com.gathercraft.gathercraft.skill.SkillPointStat;
 import com.gathercraft.gathercraft.skill.SkillType;
+import com.gathercraft.gathercraft.skill.dash.DashManager;
+import com.gathercraft.gathercraft.title.TitleManager;
+import com.gathercraft.gathercraft.tpa.TpaManager;
+import com.gathercraft.gathercraft.waypoint.WaypointManager;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
@@ -16,6 +28,8 @@ import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.item.AxeItem;
+import net.minecraft.world.item.ItemStack;
 import javax.annotation.Nullable;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
@@ -51,33 +65,34 @@ public class PlayerTickHandler {
             }
         }
 
-        // 대시 잔상/도착 파티클 처리
-        CompoundTag gcData = SkillData.getRoot(player);
-        if (gcData.getBoolean("IsDashing") && player.level() instanceof ServerLevel serverLevel) {
-            int trailLeft = gcData.getInt("DashTicksLeft");
-            if (trailLeft > 0) {
-                if (tick % 2 == 0) {
-                    serverLevel.sendParticles(ParticleTypes.CLOUD,
+        // 대시 잔상/도착 파티클 처리 — Set 체크로 비대시 틱의 NBT 읽기 방지
+        if (DashManager.dashingPlayers.contains(player.getUUID())) {
+            CompoundTag gcData = SkillData.getRoot(player);
+            if (gcData.getBoolean("IsDashing") && player.level() instanceof ServerLevel serverLevel) {
+                int trailLeft = gcData.getInt("DashTicksLeft");
+                if (trailLeft > 0) {
+                    if (tick % 2 == 0) {
+                        serverLevel.sendParticles(ParticleTypes.CLOUD,
+                            player.getX(), player.getY() + 0.5, player.getZ(),
+                            3, 0.2, 0.2, 0.2, 0.02);
+                        serverLevel.sendParticles(ParticleTypes.CRIT,
+                            player.getX(), player.getY() + 0.5, player.getZ(),
+                            5, 0.3, 0.3, 0.3, 0.1);
+                    }
+                    gcData.putInt("DashTicksLeft", trailLeft - 1);
+                } else {
+                    // 대시 종료 - 도착 파티클 + 효과음
+                    serverLevel.sendParticles(ParticleTypes.EXPLOSION_EMITTER,
                         player.getX(), player.getY() + 0.5, player.getZ(),
-                        3, 0.2, 0.2, 0.2, 0.02);
-                    serverLevel.sendParticles(ParticleTypes.CRIT,
-                        player.getX(), player.getY() + 0.5, player.getZ(),
-                        5, 0.3, 0.3, 0.3, 0.1);
+                        1, 0, 0, 0, 0);
+                    serverLevel.playSound(null, player.blockPosition(),
+                        SoundEvents.GENERIC_EXPLODE,
+                        SoundSource.PLAYERS, 0.6f, 1.8f);
+                    gcData.putBoolean("IsDashing", false);
+                    DashManager.dashingPlayers.remove(player.getUUID());
                 }
-                gcData.putInt("DashTicksLeft", trailLeft - 1);
-            } else {
-                // 대시 종료 - 도착 파티클 + 효과음
-                serverLevel.sendParticles(ParticleTypes.EXPLOSION_EMITTER,
-                    player.getX(), player.getY() + 0.5, player.getZ(),
-                    1, 0, 0, 0, 0);
-                serverLevel.playSound(null, player.blockPosition(),
-                    SoundEvents.GENERIC_EXPLODE,
-                    SoundSource.PLAYERS, 0.6f, 1.8f);
-                gcData.putBoolean("IsDashing", false);
+                SkillData.saveRoot(player, gcData);
             }
-            // getRoot()는 실제 참조를 반환하므로 수정 내용이 자동 반영됨
-            // saveRoot()는 데이터 안전을 위해 명시적으로 호출
-            SkillData.saveRoot(player, gcData);
         }
 
         // 80틱(4초)마다 채광 Haste 효과 갱신
@@ -85,38 +100,158 @@ public class PlayerTickHandler {
             applyMiningHaste(player);
         }
 
+        // 20틱(1초)마다 벌목 Haste + 각성 아이템 효과 갱신
+        if (tick % 20 == player.getId() % 20) {
+            applyLumberjackHaste(player);
+            applyAwakenedItemEffect(player);
+        }
+
         // 100틱(5초)마다 방어 속성 갱신
         if (tick % 100 == player.getId() % 100) {
             applyDefenseAttributes(player);
         }
-    }
 
-    /**
-     * 로그인 시 대기 중인 스킬 포인트 offer를 재전송한다.
-     * 오프라인 레벨업 또는 GUI를 닫고 선택을 미룬 경우 모두 처리.
-     */
-    @SubscribeEvent
-    public void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
-        if (!(event.getEntity() instanceof ServerPlayer sp)) return;
-        for (SkillType skill : SkillType.values()) {
-            if (SkillData.getPendingCount(sp, skill) > 0) {
-                SkillManager.sendSkillPointOffer(sp, skill);
+        // 30틱(1.5초)마다 all_100 칭호 보유 시 이동속도 지속 적용
+        if (tick % 30 == player.getId() % 30) {
+            if (TitleManager.hasTitle(player, "all_100")) {
+                player.addEffect(new MobEffectInstance(
+                    MobEffects.MOVEMENT_SPEED, 40, 0, false, false));
             }
         }
     }
 
     /**
-     * 사망 후 리스폰 시 GatherCraft NBT 데이터 복사.
-     * Forge는 사망 시 새 플레이어 엔티티를 생성하므로 수동 복사가 필요.
+     * 로그인 시 처리:
+     * 1) NBT 로드 확인 (loadFromNBT)
+     * 2) 각 스킬 XP 바를 클라이언트에 동기화 (SkillXpUpdatePacket)
+     * 3) 대기 중인 스킬 포인트 offer 재전송
+     */
+    @SubscribeEvent
+    public void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer sp)) return;
+
+        SkillData.loadFromNBT(sp);
+
+        // 서버 재시작 시 IsDashing 상태가 NBT에 남아있을 수 있으므로 초기화
+        CompoundTag gcLogin = SkillData.getRoot(sp);
+        gcLogin.putBoolean("IsDashing", false);
+        gcLogin.putInt("DashTicksLeft", 0);
+        SkillData.saveRoot(sp, gcLogin);
+        DashManager.dashingPlayers.remove(sp.getUUID());
+
+        // 클라이언트 HUD 오버레이 전체 동기화
+        for (SkillType skill : SkillType.values()) {
+            int level = SkillData.getLevel(sp, skill);
+            float progress = (float) SkillManager.getXPProgress(sp, skill);
+            PacketHandler.sendToPlayer(sp, new SkillXpUpdatePacket(skill, level, progress, false, false));
+        }
+
+        // 미선택 스킬 포인트 offer 재전송
+        for (SkillType skill : SkillType.values()) {
+            if (SkillData.getPendingCount(sp, skill) > 0) {
+                SkillManager.sendSkillPointOffer(sp, skill);
+            }
+        }
+
+        // 웨이포인트 목록 클라이언트 동기화
+        PacketHandler.sendToPlayer(sp, new WaypointSyncPacket(WaypointManager.getAll(sp)));
+
+        // 퀘스트 갱신 체크 + 동기화
+        PacketHandler.sendToPlayer(sp, new QuestSyncPacket(QuestManager.getQuests(sp)));
+
+        // 업적 동기화
+        PacketHandler.sendToPlayer(sp, AchievementManager.buildSyncPacket(sp));
+
+        // 칭호 체크 + 클라이언트 동기화
+        TitleManager.checkAndUnlock(sp);
+        PacketHandler.sendToPlayer(sp, new TitleSyncPacket(TitleManager.getUnlocked(sp), TitleManager.getEquipped(sp)));
+
+        // 칭호 이름표: 본인 칭호를 주변에 브로드캐스트 + 주변 플레이어 칭호를 본인에게 전송
+        if (sp.level() instanceof ServerLevel loginLevel) {
+            String myTitle = TitleManager.getEquipped(sp);
+            for (ServerPlayer nearby : loginLevel.getEntitiesOfClass(ServerPlayer.class, sp.getBoundingBox().inflate(64))) {
+                if (nearby == sp) continue;
+                PacketHandler.sendToPlayer(nearby, new TitleBroadcastPacket(sp.getUUID(), myTitle));
+                PacketHandler.sendToPlayer(sp, new TitleBroadcastPacket(nearby.getUUID(), TitleManager.getEquipped(nearby)));
+            }
+        }
+    }
+
+    /**
+     * 로그아웃 시 NBT를 명시 저장한다.
+     * updateSkill()이 이미 실시간 반영하지만, 이중 안전장치.
+     */
+    @SubscribeEvent
+    public void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        SkillData.saveToNBT(player);
+        DashManager.dashingPlayers.remove(player.getUUID());
+        TpaManager.clearPlayer(player.getUUID());
+    }
+
+    /**
+     * 사망 리스폰 후 XP 바 재동기화.
+     * (엔더 클리어 리스폰은 onPlayerClone에서 데이터를 복사하므로 스킵)
+     */
+    @SubscribeEvent
+    public void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer sp)) return;
+        if (event.isEndConquered()) return;
+
+        SkillData.loadFromNBT(sp);
+
+        for (SkillType skill : SkillType.values()) {
+            int level = SkillData.getLevel(sp, skill);
+            float progress = (float) SkillManager.getXPProgress(sp, skill);
+            PacketHandler.sendToPlayer(sp, new SkillXpUpdatePacket(skill, level, progress, false, false));
+        }
+    }
+
+    /**
+     * 사망 리스폰 AND 엔더 클리어 후 데이터 복사.
+     *
+     * 버그 수정: 기존 코드는 isWasDeath() = true(사망)만 처리했으나,
+     * 엔더 드래곤 클리어 시 isWasDeath() = false로 Clone 이벤트가 발생해
+     * 데이터가 복사되지 않고 소실됐음. 조건 제거로 두 케이스 모두 처리.
      */
     @SubscribeEvent
     public void onPlayerClone(PlayerEvent.Clone event) {
-        if (!event.isWasDeath()) return;
         CompoundTag originalData = event.getOriginal().getPersistentData();
         if (originalData.contains(SkillData.ROOT_KEY)) {
             event.getEntity().getPersistentData()
                 .put(SkillData.ROOT_KEY, originalData.getCompound(SkillData.ROOT_KEY).copy());
         }
+    }
+
+    // [3] 벌목 80레벨: 도끼 들고 있을 때 Haste III 지속
+    private void applyLumberjackHaste(ServerPlayer player) {
+        int level = SkillData.getLevel(player, SkillType.LUMBERJACK);
+        if (level < 80) return;
+        if (!(player.getMainHandItem().getItem() instanceof AxeItem)) return;
+
+        player.addEffect(new MobEffectInstance(
+            MobEffects.DIG_SPEED,
+            30,
+            2,
+            true,
+            false
+        ));
+    }
+
+    // [7b] 각성 아이템: gathercraft_awakened NBT가 있는 아이템 들면 Haste II 지속
+    private void applyAwakenedItemEffect(ServerPlayer player) {
+        ItemStack mainHand = player.getMainHandItem();
+        if (mainHand.isEmpty()) return;
+        CompoundTag tag = mainHand.getTag();
+        if (tag == null || !tag.getBoolean("gathercraft_awakened")) return;
+
+        player.addEffect(new MobEffectInstance(
+            MobEffects.DIG_SPEED,
+            30,
+            1,
+            true,
+            false
+        ));
     }
 
     private void applyMiningHaste(ServerPlayer player) {
@@ -137,10 +272,10 @@ public class PlayerTickHandler {
 
     /** 외부(레벨업 등)에서 즉시 방어 속성을 갱신할 때 사용 */
     public static void applyDefenseAttributesNow(ServerPlayer player) {
-        new PlayerTickHandler().applyDefenseAttributes(player);
+        applyDefenseAttributes(player);
     }
 
-    private void applyDefenseAttributes(ServerPlayer player) {
+    private static void applyDefenseAttributes(ServerPlayer player) {
         int level = SkillData.getLevel(player, SkillType.DEFENSE);
 
         // 체력 최대치 보너스: 레벨 기반 + 스탯 포인트 누적
