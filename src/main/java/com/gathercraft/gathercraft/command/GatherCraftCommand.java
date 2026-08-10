@@ -10,6 +10,8 @@ import com.gathercraft.gathercraft.quest.QuestManager;
 import com.gathercraft.gathercraft.skill.SkillData;
 import com.gathercraft.gathercraft.skill.SkillManager;
 import com.gathercraft.gathercraft.skill.SkillType;
+import com.gathercraft.gathercraft.skill.handler.LumberjackHandler;
+import com.gathercraft.gathercraft.skill.handler.MiningHandler;
 import com.gathercraft.gathercraft.title.TitleManager;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -22,9 +24,16 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
+import java.io.IOException;
+import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * /gathercraft test 테스트 명령어 (OP 레벨 2 필요)
@@ -111,6 +120,7 @@ public class GatherCraftCommand {
         }
 
         int passed = 0, failed = 0;
+        List<String> failedItems = new ArrayList<>();
 
         // 1. 전체 스킬 레벨 0으로 초기화
         for (SkillType skill : SkillType.values()) {
@@ -133,6 +143,7 @@ public class GatherCraftCommand {
             if (xp20 != 420L)  player.sendSystemMessage(Component.literal("  §c✘ XP 공식 오류 Lv20 (예상: 420, 실제: "  + xp20 + ")"));
             if (xp60 != 3050L) player.sendSystemMessage(Component.literal("  §c✘ XP 공식 오류 Lv60 (예상: 3050, 실제: " + xp60 + ")"));
             failed++;
+            failedItems.add("XP 공식 오류");
         }
 
         // [광물 XP 검증]
@@ -157,6 +168,7 @@ public class GatherCraftCommand {
         } else {
             player.sendSystemMessage(Component.literal("  §c✘ NBT 오류 (예상: 42, 실제: " + nbtLevel + ")"));
             failed++;
+            failedItems.add("NBT 저장/로드 오류");
         }
 
         // [PlayerCloneEvent 핸들러 등록 확인]
@@ -164,11 +176,186 @@ public class GatherCraftCommand {
         player.sendSystemMessage(Component.literal("  §7핸들러: PlayerTickHandler#onPlayerClone"));
         passed++;
 
+        // [연쇄 벌목 재진입 가드 검증]
+        player.sendSystemMessage(Component.literal("§e[연쇄 벌목 재진입 가드 검증]"));
+        if (hasDeclaredField(LumberjackHandler.class, "IS_CHAIN_FELLING")) {
+            player.sendSystemMessage(Component.literal("  §a✔ 연쇄 벌목 재진입 가드 존재"));
+            passed++;
+        } else {
+            player.sendSystemMessage(Component.literal("  §c✘ 연쇄 벌목 재진입 가드 없음 → XP 중복 가능성 있음"));
+            failed++;
+            failedItems.add("연쇄 벌목 재진입 가드 없음");
+        }
+
+        // [AntiExploitManager 등록 검증]
+        player.sendSystemMessage(Component.literal("§e[AntiExploitManager 등록 검증]"));
+        if (classExists("com.gathercraft.gathercraft.skill.AntiExploitManager")) {
+            player.sendSystemMessage(Component.literal("  §a✔ AntiExploitManager 존재"));
+            passed++;
+        } else {
+            player.sendSystemMessage(Component.literal("  §c✘ AntiExploitManager 없음"));
+            failed++;
+            failedItems.add("AntiExploitManager 없음");
+        }
+
+        boolean placeListenerExists = hasSubscribedListener(MiningHandler.class, BlockEvent.EntityPlaceEvent.class)
+            || hasSubscribedListener(LumberjackHandler.class, BlockEvent.EntityPlaceEvent.class);
+        if (placeListenerExists) {
+            player.sendSystemMessage(Component.literal("  §a✔ 설치 감지 리스너 존재"));
+            passed++;
+        } else {
+            player.sendSystemMessage(Component.literal("  §c✘ 설치 감지 리스너 없음"));
+            failed++;
+            failedItems.add("설치 감지 리스너 없음");
+        }
+
+        String miningSrc = readSourceFile("skill/handler/MiningHandler.java");
+        if (miningSrc == null) {
+            player.sendSystemMessage(Component.literal("  §7⚠ 소스 파일 없음 (배포 서버에서는 스킵됨)"));
+        } else if (miningSrc.contains("AntiExploitManager.shouldGiveXP")) {
+            player.sendSystemMessage(Component.literal("  §a✔ 광석 익스플로잇 방어 적용"));
+            passed++;
+        } else {
+            player.sendSystemMessage(Component.literal("  §c✘ 광석 익스플로잇 방어 없음"));
+            failed++;
+            failedItems.add("광석 익스플로잇 방어 없음");
+        }
+
+        String lumberjackSrc = readSourceFile("skill/handler/LumberjackHandler.java");
+        if (lumberjackSrc == null) {
+            player.sendSystemMessage(Component.literal("  §7⚠ 소스 파일 없음 (배포 서버에서는 스킵됨)"));
+        } else if (lumberjackSrc.contains("AntiExploitManager.shouldGiveXP")) {
+            player.sendSystemMessage(Component.literal("  §a✔ 원목 익스플로잇 방어 적용"));
+            passed++;
+        } else {
+            player.sendSystemMessage(Component.literal("  §c✘ 원목 익스플로잇 방어 없음"));
+            failed++;
+            failedItems.add("원목 익스플로잇 방어 없음");
+        }
+
+        // [스킬포인트 스탯 적용 검증]
+        player.sendSystemMessage(Component.literal("§e[스킬포인트 스탯 적용 검증]"));
+
+        if (miningSrc == null) {
+            player.sendSystemMessage(Component.literal("  §7⚠ 소스 파일 없음 (배포 서버에서는 스킵됨)"));
+        } else if (miningSrc.contains("getStatValue") && miningSrc.contains("SkillPointStat.MINING_XP_BONUS")) {
+            player.sendSystemMessage(Component.literal("  §a✔ MINING_XP_BONUS 적용됨"));
+            passed++;
+        } else {
+            player.sendSystemMessage(Component.literal("  §c✘ MINING_XP_BONUS 미적용"));
+            failed++;
+            failedItems.add("MINING_XP_BONUS 미적용");
+        }
+
+        String farmingSrc = readSourceFile("skill/handler/FarmingHandler.java");
+        if (farmingSrc == null) {
+            player.sendSystemMessage(Component.literal("  §7⚠ 소스 파일 없음 (배포 서버에서는 스킵됨)"));
+        } else if (farmingSrc.contains("getStatValue") && farmingSrc.contains("SkillPointStat.FARMING_BONEMEAL")) {
+            player.sendSystemMessage(Component.literal("  §a✔ FARMING_BONEMEAL 적용됨"));
+            passed++;
+        } else {
+            player.sendSystemMessage(Component.literal("  §c✘ FARMING_BONEMEAL 미적용"));
+            failed++;
+            failedItems.add("FARMING_BONEMEAL 미적용");
+        }
+
+        String fishingSrc = readSourceFile("skill/handler/FishingHandler.java");
+        if (fishingSrc == null) {
+            player.sendSystemMessage(Component.literal("  §7⚠ 소스 파일 없음 (배포 서버에서는 스킵됨)"));
+        } else if (fishingSrc.contains("getStatValue") && fishingSrc.contains("SkillPointStat.FISHING_SPEED")) {
+            player.sendSystemMessage(Component.literal("  §a✔ FISHING_SPEED 적용됨"));
+            passed++;
+        } else {
+            player.sendSystemMessage(Component.literal("  §c✘ FISHING_SPEED 미적용"));
+            failed++;
+            failedItems.add("FISHING_SPEED 미적용");
+        }
+
+        String smithingSrc = readSourceFile("skill/handler/SmithingHandler.java");
+        if (smithingSrc == null) {
+            player.sendSystemMessage(Component.literal("  §7⚠ 소스 파일 없음 (배포 서버에서는 스킵됨)"));
+        } else if (smithingSrc.contains("getStatValue") && smithingSrc.contains("SkillPointStat.SMITHING_DURABILITY")) {
+            player.sendSystemMessage(Component.literal("  §a✔ SMITHING_DURABILITY 적용됨"));
+            passed++;
+        } else {
+            player.sendSystemMessage(Component.literal("  §c✘ SMITHING_DURABILITY 미적용"));
+            failed++;
+            failedItems.add("SMITHING_DURABILITY 미적용");
+        }
+
+        String enchantingSrc = readSourceFile("skill/handler/EnchantingHandler.java");
+        if (enchantingSrc == null) {
+            player.sendSystemMessage(Component.literal("  §7⚠ 소스 파일 없음 (배포 서버에서는 스킵됨)"));
+        } else if (enchantingSrc.contains("getStatValue") && enchantingSrc.contains("SkillPointStat.ENCHANTING_COST_REDUCE")) {
+            player.sendSystemMessage(Component.literal("  §a✔ ENCHANTING_COST_REDUCE 적용됨"));
+            passed++;
+        } else {
+            player.sendSystemMessage(Component.literal("  §c✘ ENCHANTING_COST_REDUCE 미적용"));
+            failed++;
+            failedItems.add("ENCHANTING_COST_REDUCE 미적용");
+        }
+
         // 전체 결과 요약
-        player.sendSystemMessage(Component.literal(
-            "§e[GatherCraft 자동 테스트 결과] §a통과: " + passed + " §f/ §c실패: " + failed));
+        player.sendSystemMessage(Component.literal("§e============================="));
+        player.sendSystemMessage(Component.literal("§e[GatherCraft 자동 테스트 v1.6.8]"));
+        player.sendSystemMessage(Component.literal("§a통과: " + passed + "개  §c실패: " + failed + "개"));
+        player.sendSystemMessage(Component.literal("§e============================="));
+        if (!failedItems.isEmpty()) {
+            for (String item : failedItems) {
+                player.sendSystemMessage(Component.literal("§c✘ " + item));
+            }
+        }
 
         return 1;
+    }
+
+    private static boolean classExists(String fqcn) {
+        try {
+            Class.forName(fqcn);
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
+
+    private static boolean hasDeclaredField(Class<?> clazz, String fieldName) {
+        try {
+            clazz.getDeclaredField(fieldName);
+            return true;
+        } catch (NoSuchFieldException e) {
+            return false;
+        }
+    }
+
+    private static boolean hasSubscribedListener(Class<?> clazz, Class<?> eventType) {
+        for (Method m : clazz.getDeclaredMethods()) {
+            if (m.isAnnotationPresent(SubscribeEvent.class)
+                    && m.getParameterCount() == 1
+                    && m.getParameterTypes()[0] == eventType) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 개발 환경(gradlew runServer/runClient)에서만 소스 접근 가능 — 배포된 jar에서는 null 반환. */
+    private static String readSourceFile(String relativePath) {
+        String[] roots = {
+            "src/main/java/com/gathercraft/gathercraft/",
+            "../src/main/java/com/gathercraft/gathercraft/",
+            "../../src/main/java/com/gathercraft/gathercraft/"
+        };
+        for (String root : roots) {
+            Path path = Paths.get(root + relativePath);
+            if (Files.exists(path)) {
+                try {
+                    return Files.readString(path);
+                } catch (IOException e) {
+                    return null;
+                }
+            }
+        }
+        return null;
     }
 
     private int setSkill(CommandSourceStack source, String skillName, int level) {

@@ -29,10 +29,12 @@ import java.util.List;
 public class SkillPointScreen extends Screen {
 
     private static final int POPUP_W = 300;
-    private static final int POPUP_H = 230;
+    private static final int POPUP_H = 250;
     private static final int BTN_W   = 260;
-    private static final int BTN_H   = 38;
+    private static final int BTN_H   = 46;
     private static final int BTN_GAP = 8;
+    /** 버튼 안 설명 텍스트 축소 비율 */
+    private static final float DESC_SCALE = 0.75f;
 
     // --- 딜레이 큐 (static) ---
     private static int                pendingDelayTicks = -1;
@@ -161,16 +163,35 @@ public class SkillPointScreen extends Screen {
         g.fill(bx,            by + 1,        bx + 1,     by + BTN_H - 1,  borderColor);
         g.fill(bx + BTN_W - 1,by + 1,        bx + BTN_W, by + BTN_H - 1,  borderColor);
 
+        // 3줄(이름/설명/증가량) 세로 중앙 정렬
+        int nameH = font.lineHeight;
+        int descH = Math.round(font.lineHeight * DESC_SCALE);
+        int incH  = font.lineHeight;
+        int lineGap = 2;
+        int totalH = nameH + lineGap + descH + lineGap + incH;
+        int nameY = by + (BTN_H - totalH) / 2;
+        int descY = nameY + nameH + lineGap;
+        int incY  = descY + descH + lineGap;
+
         // 스탯 이름
         String nameText = "§f" + stat.displayName;
-        int nameY = by + (BTN_H - font.lineHeight * 2 - 4) / 2;
         int nameX = bx + (BTN_W - font.width(nameText)) / 2;
         g.drawString(font, nameText, nameX, nameY, 0xFFFFFF, true);
 
+        // 설명 (축소 렌더링)
+        String descText = "§7" + resolveDescription(stat, currentValues[idx]);
+        int descWidth = Math.round(font.width(descText) * DESC_SCALE);
+        int descX = bx + (BTN_W - descWidth) / 2;
+        g.pose().pushPose();
+        g.pose().translate(descX, descY, 0);
+        g.pose().scale(DESC_SCALE, DESC_SCALE, 1f);
+        g.drawString(font, descText, 0, 0, 0xFFFFFF, false);
+        g.pose().popPose();
+
         // 증가량
-        String incText = "§a" + stat.incrementText;
+        String incText = "§e" + stat.incrementText;
         int incX = bx + (BTN_W - font.width(incText)) / 2;
-        g.drawString(font, incText, incX, nameY + font.lineHeight + 3, 0xFFFFFF, false);
+        g.drawString(font, incText, incX, incY, 0xFFFFFF, false);
     }
 
     private void renderStatTooltip(GuiGraphics g, int idx, int mouseX, int mouseY) {
@@ -179,6 +200,7 @@ public class SkillPointScreen extends Screen {
 
         List<FormattedCharSequence> lines = new ArrayList<>();
         lines.add(Component.literal("§6" + stat.displayName).getVisualOrderText());
+        lines.add(Component.literal("§7" + resolveDescription(stat, current)).getVisualOrderText());
 
         String valStr = formatStatValue(stat, current);
         lines.add(Component.literal("§7현재 누적: §a" + valStr).getVisualOrderText());
@@ -187,6 +209,14 @@ public class SkillPointScreen extends Screen {
         lines.add(Component.literal("§7선택 후: §b" + afterStr).getVisualOrderText());
 
         g.renderTooltip(font, lines, mouseX, mouseY);
+    }
+
+    /** description의 "{n}" 플레이스홀더를 현재 누적값 기준 사이클 진행도로 치환한다. */
+    private String resolveDescription(SkillPointStat stat, float current) {
+        if (!stat.description.contains("{n}")) return stat.description;
+        int totalPicks = Math.round(current / stat.increment);
+        int n = totalPicks % 6;
+        return stat.description.replace("{n}", String.valueOf(n));
     }
 
     private String formatStatValue(SkillPointStat stat, float value) {

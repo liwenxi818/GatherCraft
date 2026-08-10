@@ -30,6 +30,10 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.item.AxeItem;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import javax.annotation.Nullable;
 import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
@@ -223,16 +227,24 @@ public class PlayerTickHandler {
         }
     }
 
-    // [3] 벌목 80레벨: 도끼 들고 있을 때 Haste III 지속
+    // [3] 벌목 80레벨: 도끼 들고 있을 때 Haste III 지속 (+ LUMBERJACK_SPEED 스탯 보너스, 6포인트마다 +1)
+    // [4] 스탯 보너스는 나무(도끼 채굴 블록)를 바라보고 있을 때만 적용 — 채굴 중엔 미적용
     private void applyLumberjackHaste(ServerPlayer player) {
         int level = SkillData.getLevel(player, SkillType.LUMBERJACK);
         if (level < 80) return;
         if (!(player.getMainHandItem().getItem() instanceof AxeItem)) return;
 
+        int totalAmplifier = 2;
+        if (isLookingAtLog(player)) {
+            float statValue = SkillData.getStatValue(player, SkillPointStat.LUMBERJACK_SPEED);
+            totalAmplifier += (int) (statValue / 0.18f);
+        }
+        totalAmplifier = Math.min(totalAmplifier, 4); // 최대 Haste V 캡
+
         player.addEffect(new MobEffectInstance(
             MobEffects.DIG_SPEED,
             30,
-            2,
+            totalAmplifier,
             true,
             false
         ));
@@ -254,20 +266,46 @@ public class PlayerTickHandler {
         ));
     }
 
+    // 채광 20/40/80레벨: Haste I/II/III 상시 적용 (+ MINING_SPEED 스탯 보너스, 6포인트마다 +1)
+    // [4] 스탯 보너스는 광석(곡괭이 채굴 블록)을 바라보고 있을 때만 적용 — 벌목 중엔 미적용
     private void applyMiningHaste(ServerPlayer player) {
         int level = SkillData.getLevel(player, SkillType.MINING);
         if (level < 20) return;
 
-        int hasteAmplifier = level >= 80 ? 2 : level >= 40 ? 1 : 0;
+        int totalAmplifier = level >= 80 ? 2 : level >= 40 ? 1 : 0;
+        if (isLookingAtOre(player)) {
+            float statValue = SkillData.getStatValue(player, SkillPointStat.MINING_SPEED);
+            totalAmplifier += (int) (statValue / 0.18f);
+        }
+        totalAmplifier = Math.min(totalAmplifier, 4); // 최대 Haste V 캡
 
         // 90틱 지속 (80틱 주기보다 길어야 끊기지 않음)
         player.addEffect(new MobEffectInstance(
             MobEffects.DIG_SPEED,
             90,
-            hasteAmplifier,
+            totalAmplifier,
             true,   // ambient (틱 파티클 없음)
             false
         ));
+    }
+
+    /** 5블록 이내에서 곡괭이로 캘 수 있는 블록을 바라보고 있는지 확인 (MINING_SPEED 스탯 보너스 적용 범위) */
+    private boolean isLookingAtOre(ServerPlayer player) {
+        BlockState target = getLookedAtBlock(player);
+        return target != null && target.is(BlockTags.MINEABLE_WITH_PICKAXE);
+    }
+
+    /** 5블록 이내에서 도끼로 캘 수 있는 블록을 바라보고 있는지 확인 (LUMBERJACK_SPEED 스탯 보너스 적용 범위) */
+    private boolean isLookingAtLog(ServerPlayer player) {
+        BlockState target = getLookedAtBlock(player);
+        return target != null && target.is(BlockTags.MINEABLE_WITH_AXE);
+    }
+
+    @Nullable
+    private BlockState getLookedAtBlock(ServerPlayer player) {
+        HitResult hit = player.pick(5.0, 0f, false);
+        if (hit.getType() != HitResult.Type.BLOCK || !(hit instanceof BlockHitResult blockHit)) return null;
+        return player.level().getBlockState(blockHit.getBlockPos());
     }
 
     /** 외부(레벨업 등)에서 즉시 방어 속성을 갱신할 때 사용 */

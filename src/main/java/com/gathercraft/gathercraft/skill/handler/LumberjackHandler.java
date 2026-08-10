@@ -2,6 +2,7 @@ package com.gathercraft.gathercraft.skill.handler;
 
 import com.gathercraft.gathercraft.achievement.AchievementManager;
 import com.gathercraft.gathercraft.quest.QuestManager;
+import com.gathercraft.gathercraft.skill.AntiExploitManager;
 import com.gathercraft.gathercraft.skill.SkillData;
 import com.gathercraft.gathercraft.skill.SkillManager;
 import com.gathercraft.gathercraft.skill.SkillPointStat;
@@ -44,6 +45,9 @@ public class LumberjackHandler {
 
     private static final int MAX_CHAIN_BLOCKS = 64;
 
+    /** 100레벨 각성 연쇄 벌목 실행 중 재진입 방지 플래그 (MiningHandler의 IS_AREA_MINING과 동일 패턴) */
+    private static final ThreadLocal<Boolean> IS_CHAIN_FELLING = ThreadLocal.withInitial(() -> false);
+
     // [1] 도끼 내구도 추적 (TickEvent 기반)
     private final Map<UUID, Integer> prevAxeDamage = new HashMap<>();
 
@@ -61,6 +65,8 @@ public class LumberjackHandler {
             if (prev != null && currentDamage > prev) {
                 int level = SkillData.getLevel(player, SkillType.LUMBERJACK);
                 double chance = level >= 60 ? 0.50 : level >= 20 ? 0.20 : 0.0;
+                float durabilityStat = SkillData.getStatValue(player, SkillPointStat.LUMBERJACK_DURABILITY);
+                chance = Math.min(chance + durabilityStat, 0.95);
                 if (chance > 0 && ThreadLocalRandom.current().nextDouble() < chance) {
                     stack.setDamageValue(prev);
                 }
@@ -102,10 +108,14 @@ public class LumberjackHandler {
 
     @SubscribeEvent
     public void onBlockBreak(BlockEvent.BreakEvent event) {
+        if (IS_CHAIN_FELLING.get()) return;
         if (event.isCanceled()) return;
         if (!(event.getPlayer() instanceof ServerPlayer player)) return;
         BlockState state = event.getState();
         if (!state.is(BlockTags.LOGS)) return;
+
+        // 플레이어가 설치한 원목이면 XP/보상 지급 안 함
+        if (!AntiExploitManager.shouldGiveXP(event.getPos(), false)) return;
 
         SkillManager.addXP(player, SkillType.LUMBERJACK, 8);
 
@@ -158,8 +168,14 @@ public class LumberjackHandler {
         }
 
         // 100레벨 각성: 연결된 나무 전체 동시 채굴
+        // IS_CHAIN_FELLING 플래그로 재진입(연쇄 이벤트) 방지
         if (level >= 100 && ThreadLocalRandom.current().nextDouble() < 0.20) {
-            triggerChainFelling(player, world, pos);
+            IS_CHAIN_FELLING.set(true);
+            try {
+                triggerChainFelling(player, world, pos);
+            } finally {
+                IS_CHAIN_FELLING.set(false);
+            }
         }
     }
 
@@ -215,6 +231,7 @@ public class LumberjackHandler {
         // 시작 블록은 이미 파괴되므로 제외
         for (BlockPos pos : toBreak) {
             if (!pos.equals(start)) {
+                if (!AntiExploitManager.shouldGiveXP(pos, false)) continue;
                 // 각 블록에 나뭇잎 + TOTEM 파티클
                 world.sendParticles(ParticleTypes.CHERRY_LEAVES,
                     pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5,

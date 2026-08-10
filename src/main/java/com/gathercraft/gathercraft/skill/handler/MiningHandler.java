@@ -3,6 +3,7 @@ package com.gathercraft.gathercraft.skill.handler;
 import com.gathercraft.gathercraft.achievement.AchievementManager;
 import com.gathercraft.gathercraft.particle.ParticleUtil;
 import com.gathercraft.gathercraft.quest.QuestManager;
+import com.gathercraft.gathercraft.skill.AntiExploitManager;
 import com.gathercraft.gathercraft.skill.SkillData;
 import com.gathercraft.gathercraft.skill.SkillManager;
 import com.gathercraft.gathercraft.skill.SkillPointStat;
@@ -13,7 +14,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.entity.ExperienceOrb;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.common.Tags;
 import net.minecraftforge.event.level.BlockEvent;
@@ -33,6 +36,20 @@ public class MiningHandler {
     /** 100레벨 각성 area mining 실행 중 재진입 방지 플래그 */
     private static final ThreadLocal<Boolean> IS_AREA_MINING = ThreadLocal.withInitial(() -> false);
 
+    /** 플레이어가 직접 설치한 광석/원목 위치 추적 (재설치 후 재채굴 XP 파밍 방지) */
+    @SubscribeEvent
+    public void onBlockPlace(BlockEvent.EntityPlaceEvent event) {
+        if (!(event.getEntity() instanceof Player)) return;
+        BlockState placedState = event.getState();
+        BlockPos placedPos = event.getPos();
+
+        if (placedState.is(Tags.Blocks.ORES)) {
+            AntiExploitManager.markPlaced(placedPos, true);
+        } else if (placedState.is(BlockTags.LOGS)) {
+            AntiExploitManager.markPlaced(placedPos, false);
+        }
+    }
+
     @SubscribeEvent
     public void onBlockBreak(BlockEvent.BreakEvent event) {
         if (IS_AREA_MINING.get()) return;
@@ -40,9 +57,16 @@ public class MiningHandler {
         BlockState state = event.getState();
         if (!state.is(Tags.Blocks.ORES)) return;
 
+        // 플레이어가 설치한 광석이면 XP/보상 지급 안 함
+        if (!AntiExploitManager.shouldGiveXP(event.getPos(), true)) return;
+
         long oreXp = getOreXP(state);
         if (TitleManager.hasTitle(player, "miner_3")) {
             oreXp = (long) (oreXp * 1.10);
+        }
+        float xpBonus = SkillData.getStatValue(player, SkillPointStat.MINING_XP_BONUS);
+        if (xpBonus > 0) {
+            oreXp = (long) (oreXp * (1f + xpBonus));
         }
         SkillManager.addXP(player, SkillType.MINING, oreXp);
 
@@ -134,6 +158,7 @@ public class MiningHandler {
                     if (dx == 0 && dy == 0 && dz == 0) continue;
                     BlockPos target = center.offset(dx, dy, dz);
                     if (world.getBlockState(target).is(Tags.Blocks.ORES)) {
+                        if (!AntiExploitManager.shouldGiveXP(target, true)) continue;
                         world.sendParticles(ParticleTypes.CRIT,
                             target.getX() + 0.5, target.getY() + 0.5, target.getZ() + 0.5,
                             2, 0.2, 0.2, 0.2, 0.1);

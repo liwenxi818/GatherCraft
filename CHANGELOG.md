@@ -1,5 +1,81 @@
 # GatherCraft Changelog
 
+## [1.7.0] - 2026-08-10
+
+### 버그 수정 (노션 피드백 반영)
+- **[낮음] MINING_SPEED/LUMBERJACK_SPEED 표시 텍스트 혼동 수정**: `incrementText`가 "+3%"로 표시되어 실제로는 Haste 부여 방식임에도 % 증가처럼 오인되던 문제. "6회마다 성급함 +1"로 변경, `description`도 "(현재 N/6)" 형태의 사이클 진행도 표시 추가(`SkillPointScreen`이 현재 누적값 기준으로 동적 계산해 `{n}` 플레이스홀더 치환)
+- **[높음] 오버밸런스 너프**: 스탯 포인트 3개(0.09)마다 Haste +1이 부여되어 포인트당 실질 채굴 속도 상승이 의도치(3%/포인트)보다 월등히 높던 문제. 임계값을 6포인트(0.18)마다 +1로 조정
+- **[높음] 레벨 기반 + 스탯 기반 Haste 합산 버그 수정**: 기존에는 레벨 기반 상시 Haste와 스탯 기반 Haste가 별개로 부여되어 낮은 쪽이 높은 쪽에 덮어씌워지던 문제(예: 레벨 Haste II + 스탯 Haste III → III만 적용, V 기대). 이제 `applyMiningHaste`/`applyLumberjackHaste` 내부에서 레벨 amplifier + 스탯 amplifier를 합산한 뒤 최대 Haste V로 캡
+- **[치명] 채굴/벌목 Haste 크로스 버그 수정**: MINING_SPEED 스탯으로 얻은 Haste가 벌목 중에도 그대로 적용되어(반대도 동일) LUMBERJACK_SPEED에 투자할 이유가 사라지던 문제. `PlayerTickHandler`에 `isLookingAtOre()`/`isLookingAtLog()`(5블록 레이캐스트 + `BlockTags.MINEABLE_WITH_PICKAXE`/`MINEABLE_WITH_AXE`)를 추가해, 스탯 기반 보너스는 해당 활동에 맞는 블록을 바라볼 때만 적용되도록 분리(레벨 기반 baseline은 기존과 동일하게 유지)
+
+## [1.6.9] - 2026-08-10
+
+### 기능 개선
+- **레벨업 스탯 포인트 선택지에 설명 추가**: `SkillPointStat` enum에 `description` 필드(36개 스탯 전체 한국어 설명) 및 `getDescription()` getter 추가
+  - `SkillPointScreen` 선택지 버튼을 2줄(이름/증가량) → 3줄(이름/설명/증가량) 구조로 개편, 설명 텍스트는 `PoseStack` 스케일(0.75x)로 축소 렌더링
+  - 버튼 높이 `BTN_H` 38→46, 팝업 높이 `POPUP_H` 230→250으로 확대해 3줄 레이아웃 수용
+  - 증가량 텍스트 색상을 초록(`§a`)에서 노랑(`§e`)으로 변경
+  - 호버 툴팁(`renderStatTooltip`)에도 설명 한 줄 추가
+
+## [1.6.8] - 2026-08-09
+
+### 버그 수정
+- **연쇄 벌목(100레벨 각성) 재진입 가드 추가**: `LumberjackHandler.triggerChainFelling()`에 `MiningHandler`의 `IS_AREA_MINING`과 동일한 `ThreadLocal<Boolean>` 재진입 방지 패턴(`IS_CHAIN_FELLING`)을 적용 — `world.destroyBlock()` 호출로 `BlockEvent.BreakEvent`가 재발생하더라도 `onBlockBreak()`가 즉시 반환되어 로그 1개당 XP/퀘스트/업적/드롭이 중복 지급될 가능성을 원천 차단 (v1.6.7에서 "미해결 확인 사항"으로 남았던 항목의 후속 조치)
+
+### 테스트
+- `/gathercraft test auto`에 코드 레벨 검증 10개 항목 추가
+  - 연쇄 벌목 재진입 가드 존재 여부(리플렉션, `IS_CHAIN_FELLING` 필드 조회)
+  - `AntiExploitManager` 클래스 존재 여부 + `BlockEvent.EntityPlaceEvent` 설치 감지 리스너 존재 여부(리플렉션)
+  - 광석/원목 채굴 시 `AntiExploitManager.shouldGiveXP()` 호출 여부(소스 파일 텍스트 검사)
+  - 5개 스킬(Mining/Farming/Fishing/Smithing/Enchanting)의 `SkillPointStat` 연동(`getStatValue()` 호출) 여부(소스 파일 텍스트 검사)
+  - 소스 파일 검사 기반 항목은 개발 환경(`gradlew runServer`/`runClient`)에서만 동작하며, 배포된 서버(mods 폴더)에서는 스킵되고 pass/fail 카운트에 포함되지 않음
+- 테스트 결과 요약 출력을 박스 형태로 개편 + 실패 항목을 마지막에 재출력
+
+## [1.6.7] - 2026-08-08
+
+### 버그 수정
+- **섬손 재설치 XP 파밍 익스플로잇 수정**: 섬손으로 캔 광석/원목을 다시 설치한 뒤 재채굴하면 XP/퀘스트 진행도/업적/추가 드롭이 무한히 중복 지급되던 문제
+  - `AntiExploitManager` 신설 — 플레이어가 설치한 블록 위치를 `Set<Long>`(LinkedHashSet, 최대 10만 개, 초과 시 최오래된 항목 자동 제거)으로 추적, 서버 런타임 동안만 유지(재시작 시 초기화 — 허용 범위)
+  - `MiningHandler`에 `BlockEvent.EntityPlaceEvent` 리스너 신설: 광석/원목 설치 위치를 각각 기록
+  - `MiningHandler`/`LumberjackHandler`의 `onBlockBreak()`에 `shouldGiveXP()` 체크 추가: 설치된 블록을 재채굴하면 XP를 포함한 모든 보상(퀘스트/업적/추가 드롭/파티클)을 스킵
+  - 100레벨 각성 연쇄 채굴(`triggerAreaMining`)/연쇄 벌목(`triggerChainFelling`)도 동일 로직으로 방어 — 연쇄 파괴 대상에 설치된 블록이 있으면 건너뜀
+
+## [1.6.6] - 2026-08-08
+
+### 버그 수정
+- **SkillPointStat 미적용 13개 스탯 전부 활성화**: `MINING_SPEED`, `MINING_XP_BONUS`, `LUMBERJACK_DURABILITY`, `LUMBERJACK_SPEED`, `FARMING_BONEMEAL`, `FARMING_GROWTH`, `FISHING_SPEED`, `COOKING_SATURATION`, `COOKING_EXTRA_BUFF`, `SMITHING_DURABILITY`, `ENCHANTING_COST_REDUCE`, `ENCHANTING_EXTRA`, `ENCHANTING_CURSE_IMMUNE` — NBT에는 저장되지만 실제 게임 로직에서 조회되지 않던 버그. 기존 레벨 기반 로직은 그대로 두고 `SkillData.getStatValue()` 값을 확률/배율/amplifier에 덧셈으로 반영하는 방식으로 구현 (포인트 미투자 시 기존 동작과 완전 동일, 하위 호환 보장)
+  - `MiningHandler`/`PlayerTickHandler`/`LumberjackHandler`/`FarmingHandler`/`FishingHandler`/`CookingHandler`/`SmithingHandler`/`EnchantingHandler` 8개 파일 수정
+  - `SkillPointStat.java`의 `†`(미구현) 표시 전부 제거
+
+## [1.6.5] - 2026-07-30
+
+### 버그 수정
+- **낚시 속도 증가 버그 수정**: v1.6.3에서 잘못된 필드(`timeUntilHooked`)를 잘못된 시점(`EntityJoinLevelEvent`, 캐스팅 직후)에 건드려 항상 최솟값(20틱)으로 고정되던 문제. 실제 대기시간 필드는 `timeUntilLured`이며 낚시찌가 물에 착수한 뒤 첫 틱에야 랜덤 배정되므로, `TickEvent.PlayerTickEvent` + `player.fishing`으로 매 틱 감시하다가 값이 "증가"하는 순간(=새 대기 사이클이 막 시작된 순간)을 감지해 1회만 단축 적용하는 방식으로 재작성 (`FishingHandler`)
+  - 실기 테스트에서 20/100레벨 체감 차이가 없던 증상이 이 버그로 확인됨
+
+### 신규 기능
+- **칭호 채팅 표시**: 착용 중인 칭호를 채팅 메시지 앞에도 표시 (`TitleChatHandler`, `ServerChatEvent` 취소 후 서명되지 않은 시스템 메시지로 재브로드캐스트)
+  - 필드에서 다른 플레이어 이름표 위에 칭호를 표시하는 기능은 v1.5.1에 이미 구현되어 있었음(`TitleNameTagRenderer`)
+
+## [1.6.4] - 2026-07-30
+
+### 신규 기능 / 스펙 정합화
+- **요리 다중 버프 시스템 재설계**: 50/80/100레벨의 확률 기반 "추가 버프"(15%/30%/50%)를 걷어내고, 원래 스펙대로 50레벨 2개·80레벨 3개 버프 동시 적용으로 재구현
+  - `CookingHandler`에 음식 카테고리별 우선순위 버프 배열(`MEAT_BUFFS`/`POULTRY_BUFFS`/`FISH_BUFFS`/`STAPLE_BUFFS`/`DESSERT_BUFFS`) 신설, `buffCount(level)`(20→1개/50→2개/80→3개)만큼 순서대로 적용
+  - **90레벨: 모든 음식 버프 강도 최대** 신규 구현 — `buffAmplifier()`가 90레벨 이상에서 amplifier 2(표시 "III") 고정
+  - 100레벨 각성(체력 +4 회복 + 디버프 제거)과 역할이 겹치던 확률 시스템의 100레벨 티어는 삭제
+- 문서화된 모든 스킬 TODO 항목 구현 완료 (CLAUDE.md `❌ 미구현 목록` 비움)
+
+## [1.6.3] - 2026-07-30
+
+### 버그 수정 / 스펙 정합화
+- **농사 20레벨**: "뼛가루 1개로 2회 효과"를 정식 구현 (기존에는 40/70/90레벨 즉시 완숙으로만 대체되어 있었음)
+  - `FarmingHandler.onBonemeal()`이 20~39레벨 구간에서 `CropBlock.performBonemeal()`을 동일 뼛가루 소비로 2회 연속 호출하도록 분기 추가, 40레벨 이상은 기존 확률 기반 즉시 완숙 로직 유지
+- **낚시 속도 증가 레벨 수정**: 30/60/90레벨(20%/40%/65%) → 스펙대로 20/40/70레벨(10%/25%/50%)로 정정
+  - `FishingHandler`의 `timeUntilHooked` 리플렉션 필드 조회를 이벤트마다 반복하던 것을 정적 캐시 + `reduceHookTime()` 헬퍼로 리팩토링 (기존 두 곳에 중복돼 있던 try/catch 블록 통합)
+- **요리 포화도 증가 레벨/방식 수정**: 30/60/90레벨 고정값(+0.4/+1.0/+2.0) → 스펙대로 40/70레벨, `FoodProperties` 기반 실제 포화도의 20%/50% 증가로 재구현
+- **ItemSmeltedEvent 서버 발동 검증**: Forge 소스(`FurnaceResultSlot.java.patch`) 확인 결과 컨테이너 슬롯 로직은 전적으로 서버 사이드에서 처리되므로 데디케이티드 서버에서도 정상 발동함을 코드 레벨로 확인. 단, 호퍼 자동 추출 시에는 발동하지 않는 한계를 문서화
+
 ## [1.6.2] - 2026-07-09
 
 ### 신규 기능

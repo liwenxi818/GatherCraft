@@ -5,6 +5,7 @@ import com.gathercraft.gathercraft.particle.ParticleUtil;
 import com.gathercraft.gathercraft.quest.QuestManager;
 import com.gathercraft.gathercraft.skill.SkillData;
 import com.gathercraft.gathercraft.skill.SkillManager;
+import com.gathercraft.gathercraft.skill.SkillPointStat;
 import com.gathercraft.gathercraft.skill.SkillType;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
@@ -17,18 +18,21 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.enchantment.EnchantmentHelper;
 import net.minecraft.world.item.enchantment.Enchantments;
-import net.minecraftforge.event.entity.EntityJoinLevelEvent;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.player.ItemFishedEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
 import java.lang.reflect.Field;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * 낚시 스킬 핸들러
  * - 낚시로 아이템 획득 시 XP 적립
- * - 레벨별 보너스: 쓰레기 드롭 감소, 희귀 아이템 확률, 추가 물고기, 보물 확률, 낚시 속도
+ * - 레벨별 보너스: 쓰레기 드롭 감소, 희귀 아이템 확률, 추가 물고기, 보물 확률, 낚시 속도(20/40/70레벨, TickEvent 기반 timeUntilLured 단축)
  * - 모션: SPLASH + UNDERWATER (항상), TOTEM (희귀 아이템)
  */
 public class FishingHandler {
@@ -89,52 +93,84 @@ public class FishingHandler {
         }
     }
 
-    // FISHING_SPEED: 낚시 부표 생성 시 대기시간 단축
+    // FishingHook#timeUntilLured 리플렉션 필드 캐시 (매 틱마다 재조회 방지)
+    // 주의: timeUntilHooked가 아니라 timeUntilLured가 실제 "입질까지의 대기시간"이다.
+    // timeUntilLured는 낚시찌가 물에 착수한 뒤 catchingFish() 첫 호출에서야 랜덤(100~600)으로 배정되므로,
+    // EntityJoinLevelEvent(캐스팅 시점)에는 아직 0이라 그 시점에 값을 건드리면 항상 0을 읽어 의미 없는 결과가 나온다.
+    private static final Field TIME_UNTIL_LURED_FIELD = resolveTimeUntilLuredField();
+
+    private static Field resolveTimeUntilLuredField() {
+        try {
+            Field f = FishingHook.class.getDeclaredField("timeUntilLured");
+            f.setAccessible(true);
+            return f;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void reduceLureTime(FishingHook hook, float reduction) {
+        if (TIME_UNTIL_LURED_FIELD == null) return;
+        try {
+            int current = TIME_UNTIL_LURED_FIELD.getInt(hook);
+            TIME_UNTIL_LURED_FIELD.setInt(hook, Math.max(20, (int) (current * (1f - reduction))));
+        } catch (Exception ignored) {}
+    }
+
+    // 낚시찌별 timeUntilLured 직전 값 추적 (플레이어 UUID 기준, 값이 증가하면 새 대기 사이클이 막 시작된 것)
+    private final Map<UUID, Integer> prevTimeUntilLured = new HashMap<>();
+
+    // FISHING_SPEED: 새 대기 사이클이 시작되는 순간을 감지해 timeUntilLured를 1회 단축 (20/40/70레벨: 10%/25%/50%)
     @SubscribeEvent
-    public void onEntityJoinLevel(EntityJoinLevelEvent event) {
-        if (!(event.getEntity() instanceof FishingHook hook)) return;
-        if (!(hook.getOwner() instanceof ServerPlayer player)) return;
+    public void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) return;
+        if (!(event.player instanceof ServerPlayer player)) return;
+
+        FishingHook hook = player.fishing;
+        UUID uuid = player.getUUID();
+
+        if (hook == null || TIME_UNTIL_LURED_FIELD == null) {
+            prevTimeUntilLured.remove(uuid);
+            return;
+        }
 
         int level = SkillData.getLevel(player, SkillType.FISHING);
-        float reduction;
-        if (level >= 90) reduction = 0.65f;
-        else if (level >= 60) reduction = 0.40f;
-        else if (level >= 30) reduction = 0.20f;
-        else return;
-
-        try {
-            Field f;
-            try {
-                f = FishingHook.class.getDeclaredField("timeUntilHooked");
-            } catch (NoSuchFieldException e) {
-                f = FishingHook.class.getDeclaredField("f_36102_");
-            }
-            f.setAccessible(true);
-            int current = f.getInt(hook);
-            f.setInt(hook, Math.max(20, (int)(current * (1f - reduction))));
-        } catch (Exception ignored) {}
-
-        // [5] 50레벨: 인챈트된 낚싯대 효과 강화 (인챈트 1레벨당 10% 추가 감소)
-        if (level >= 50) {
-            ItemStack rod = player.getMainHandItem();
-            int lureLevel = EnchantmentHelper.getItemEnchantmentLevel(Enchantments.FISHING_SPEED, rod);
-            int luckLevel = EnchantmentHelper.getItemEnchantmentLevel(Enchantments.FISHING_LUCK, rod);
-            int totalLevels = lureLevel + luckLevel;
-            if (totalLevels > 0) {
-                float enchantReduction = Math.min(totalLevels * 0.10f, 0.50f);
-                try {
-                    Field ef;
-                    try {
-                        ef = FishingHook.class.getDeclaredField("timeUntilHooked");
-                    } catch (NoSuchFieldException ex) {
-                        ef = FishingHook.class.getDeclaredField("f_36102_");
-                    }
-                    ef.setAccessible(true);
-                    int cur = ef.getInt(hook);
-                    ef.setInt(hook, Math.max(20, (int)(cur * (1f - enchantReduction))));
-                } catch (Exception ignored) {}
-            }
+        if (level < 20) {
+            prevTimeUntilLured.remove(uuid);
+            return;
         }
+
+        int current;
+        try {
+            current = TIME_UNTIL_LURED_FIELD.getInt(hook);
+        } catch (Exception e) {
+            return;
+        }
+
+        Integer prev = prevTimeUntilLured.get(uuid);
+        if (prev != null && current > prev) {
+            float statBonus = SkillData.getStatValue(player, SkillPointStat.FISHING_SPEED);
+            float reduction = Math.min((level >= 70 ? 0.50f : level >= 40 ? 0.25f : 0.10f) + statBonus, 0.90f);
+            reduceLureTime(hook, reduction);
+
+            // 50레벨: 인챈트된 낚싯대 효과 강화 (인챈트 1레벨당 10% 추가 감소)
+            if (level >= 50) {
+                ItemStack rod = player.getMainHandItem();
+                int lureLevel = EnchantmentHelper.getItemEnchantmentLevel(Enchantments.FISHING_SPEED, rod);
+                int luckLevel = EnchantmentHelper.getItemEnchantmentLevel(Enchantments.FISHING_LUCK, rod);
+                int totalLevels = lureLevel + luckLevel;
+                if (totalLevels > 0) {
+                    float enchantReduction = Math.min(totalLevels * 0.10f, 0.50f);
+                    reduceLureTime(hook, enchantReduction);
+                }
+            }
+
+            try {
+                current = TIME_UNTIL_LURED_FIELD.getInt(hook);
+            } catch (Exception ignored) {}
+        }
+
+        prevTimeUntilLured.put(uuid, current);
     }
 
     private boolean isJunk(ItemStack stack) {

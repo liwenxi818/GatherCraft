@@ -2,6 +2,7 @@ package com.gathercraft.gathercraft.skill.handler;
 
 import com.gathercraft.gathercraft.skill.SkillData;
 import com.gathercraft.gathercraft.skill.SkillManager;
+import com.gathercraft.gathercraft.skill.SkillPointStat;
 import com.gathercraft.gathercraft.skill.SkillType;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
@@ -78,6 +79,7 @@ public class EnchantingHandler {
         else if (enchLevel >= 30) costReduceRate = 0.15f;
         else if (enchLevel >= 10) costReduceRate = 0.08f;
         else costReduceRate = 0f;
+        costReduceRate = Math.min(costReduceRate + SkillData.getStatValue(player, SkillPointStat.ENCHANTING_COST_REDUCE), 0.80f);
 
         if (costReduceRate > 0) {
             int refund = (int)(xpConsumed * costReduceRate);
@@ -90,6 +92,7 @@ public class EnchantingHandler {
         else if (enchLevel >= 80) curseImmuneChance = 0.60;
         else if (enchLevel >= 50) curseImmuneChance = 0.30;
         else curseImmuneChance = 0;
+        curseImmuneChance = Math.min(curseImmuneChance + SkillData.getStatValue(player, SkillPointStat.ENCHANTING_CURSE_IMMUNE), 1.0);
 
         if (curseImmuneChance > 0 && ThreadLocalRandom.current().nextDouble() < curseImmuneChance) {
             removeCurseEnchants(player);
@@ -101,6 +104,7 @@ public class EnchantingHandler {
         else if (enchLevel >= 80) extraChance = 0.20;
         else if (enchLevel >= 60) extraChance = 0.10;
         else extraChance = 0;
+        extraChance = Math.min(extraChance + SkillData.getStatValue(player, SkillPointStat.ENCHANTING_EXTRA), 0.80);
 
         if (extraChance > 0 && ThreadLocalRandom.current().nextDouble() < extraChance) {
             tryAddExtraEnchant(player, xpOnOpen);

@@ -4,6 +4,7 @@ import com.gathercraft.gathercraft.achievement.AchievementManager;
 import com.gathercraft.gathercraft.quest.QuestManager;
 import com.gathercraft.gathercraft.skill.SkillData;
 import com.gathercraft.gathercraft.skill.SkillManager;
+import com.gathercraft.gathercraft.skill.SkillPointStat;
 import com.gathercraft.gathercraft.skill.SkillType;
 import com.gathercraft.gathercraft.skill.SkillUtil;
 import net.minecraft.core.BlockPos;
@@ -11,6 +12,7 @@ import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -27,7 +29,7 @@ import java.util.concurrent.ThreadLocalRandom;
 /**
  * 농사 스킬 핸들러
  * - 완전히 자란 작물 수확 시 XP 적립
- * - 레벨별 보너스: 추가 드롭, 자동 재식(40레벨), 뼛가루 즉시 완숙, 성장 가속, 5x5 수확(100레벨)
+ * - 레벨별 보너스: 추가 드롭, 자동 재식(40레벨), 뼛가루 2회 효과(20레벨)/즉시 완숙(40+레벨), 성장 가속, 5x5 수확(100레벨)
  */
 public class FarmingHandler {
 
@@ -85,29 +87,39 @@ public class FarmingHandler {
         }
     }
 
-    // FARMING_BONEMEAL: 뼛가루 사용 시 즉시 완숙
+    // FARMING_BONEMEAL: 20레벨은 뼛가루 1개로 성장 효과 2회, 40/70/90레벨은 확률적 즉시 완숙
     @SubscribeEvent
     public void onBonemeal(BonemealEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         if (!(event.getLevel() instanceof ServerLevel serverLevel)) return;
 
         int level = SkillData.getLevel(player, SkillType.FARMING);
-
-        double chance;
-        if (level >= 90) chance = 0.80;
-        else if (level >= 70) chance = 0.50;
-        else if (level >= 40) chance = 0.25;
-        else return;
+        if (level < 20) return;
 
         BlockPos pos = event.getPos();
         BlockState state = event.getBlock();
         if (!(state.getBlock() instanceof CropBlock cropBlock)) return;
 
-        if (ThreadLocalRandom.current().nextDouble() < chance) {
-            BlockState fullGrown = cropBlock.getStateForAge(cropBlock.getMaxAge());
-            serverLevel.setBlock(pos, fullGrown, Block.UPDATE_ALL);
-            event.setResult(Event.Result.ALLOW);
+        if (level >= 40) {
+            double baseChance = level >= 90 ? 0.80 : level >= 70 ? 0.50 : 0.25;
+            float statBonus = SkillData.getStatValue(player, SkillPointStat.FARMING_BONEMEAL);
+            double chance = Math.min(baseChance + statBonus, 1.0);
+            if (ThreadLocalRandom.current().nextDouble() < chance) {
+                BlockState fullGrown = cropBlock.getStateForAge(cropBlock.getMaxAge());
+                serverLevel.setBlock(pos, fullGrown, Block.UPDATE_ALL);
+                event.setResult(Event.Result.ALLOW);
+            }
+            return;
         }
+
+        // [20레벨] 뼛가루 1개로 performBonemeal을 2회 적용 (원본 성장 효과 2배)
+        RandomSource random = serverLevel.getRandom();
+        cropBlock.performBonemeal(serverLevel, random, pos, state);
+        BlockState afterFirst = serverLevel.getBlockState(pos);
+        if (afterFirst.getBlock() instanceof CropBlock cropBlockAfter) {
+            cropBlockAfter.performBonemeal(serverLevel, random, pos, afterFirst);
+        }
+        event.setResult(Event.Result.ALLOW);
     }
 
     // FARMING_GROWTH: 자연 성장 시 추가 성장
@@ -119,10 +131,14 @@ public class FarmingHandler {
 
         // 주변 16블록 플레이어 중 가장 높은 파밍 레벨
         int level = 0;
+        ServerPlayer bestPlayer = null;
         for (ServerPlayer sp : serverLevel.players()) {
             if (sp.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) <= 256.0) {
                 int pLevel = SkillData.getLevel(sp, SkillType.FARMING);
-                if (pLevel > level) level = pLevel;
+                if (pLevel > level) {
+                    level = pLevel;
+                    bestPlayer = sp;
+                }
             }
         }
 
@@ -130,6 +146,11 @@ public class FarmingHandler {
         if (level >= 80) chance = 0.40;
         else if (level >= 50) chance = 0.20;
         else return;
+
+        if (bestPlayer != null) {
+            float statBonus = SkillData.getStatValue(bestPlayer, SkillPointStat.FARMING_GROWTH);
+            chance = Math.min(chance + statBonus, 0.95);
+        }
 
         if (!(state.getBlock() instanceof CropBlock cropBlock)) return;
         int age = cropBlock.getAge(state);

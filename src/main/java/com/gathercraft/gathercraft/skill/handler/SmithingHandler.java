@@ -55,6 +55,8 @@ public class SmithingHandler {
                 else if (level >= 30) chance = 0.25;
                 else if (level >= 10) chance = 0.10;
                 else chance = 0.0;
+                float durabilityStat = SkillData.getStatValue(player, SkillPointStat.SMITHING_DURABILITY);
+                chance = Math.min(chance + durabilityStat, 0.95);
                 if (chance > 0 && ThreadLocalRandom.current().nextDouble() < chance) {
                     stack.setDamageValue(prev);
                 }

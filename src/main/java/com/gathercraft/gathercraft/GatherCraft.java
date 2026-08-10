@@ -8,6 +8,7 @@ import com.gathercraft.gathercraft.command.TpaCommand;
 import com.gathercraft.gathercraft.item.SkillBookItem;
 import com.gathercraft.gathercraft.network.PacketHandler;
 import com.gathercraft.gathercraft.skill.handler.*;
+import com.gathercraft.gathercraft.title.TitleChatHandler;
 import com.mojang.logging.LogUtils;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.Item;
@@ -84,6 +85,7 @@ public class GatherCraft {
         forgeBus.register(new SkillCommand());
         forgeBus.register(new GatherCraftCommand());
         forgeBus.register(new TpaCommand());
+        forgeBus.register(new TitleChatHandler());
 
         LOGGER.info("GatherCraft initialized - 9 skill RPG mod loaded!");
     }
