@@ -65,6 +65,9 @@ public enum SkillPointStat {
     ENCHANTING_EXTRA       (SkillType.ENCHANTING, "추가 인챈트 확률",  "+1%",   0.01f, "인챈트 후 추가 인챈트 부여 확률 증가"),
     ENCHANTING_CURSE_IMMUNE(SkillType.ENCHANTING, "저주 면역 확률",    "+2%",   0.02f, "저주 인챈트 자동 제거 확률 증가");
 
+    /** MINING_SPEED / LUMBERJACK_SPEED 전용: 이 횟수만큼 선택할 때마다 Haste amplifier +1 */
+    public static final int HASTE_PICKS_PER_LEVEL = 6;
+
     public final SkillType skill;
     public final String displayName;
     /** 선택지 버튼에 표시되는 증가량 텍스트 */

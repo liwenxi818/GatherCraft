@@ -83,6 +83,16 @@ public class SkillData {
         saveRoot(player, tag);
     }
 
+    /**
+     * 선택 횟수(정수)를 반환한다. 누적 float 값은 반복 덧셈으로 인한 오차(예: 6번 선택 후
+     * 0.18f가 아닌 0.17999999f)가 생길 수 있으므로, 반올림으로 실제 선택 횟수를 복원한다.
+     * 이후 임계값 나눗셈(예: 6포인트마다 +1)은 이 정수값으로 해야 (int) 버림에 의한
+     * 오프바이원 오류가 생기지 않는다.
+     */
+    public static int getStatPickCount(Player player, SkillPointStat stat) {
+        return Math.round(getStatValue(player, stat) / stat.increment);
+    }
+
     /** 레벨업 후 아직 선택하지 않은 스킬 포인트 수를 반환한다. */
     public static int getPendingCount(Player player, SkillType skill) {
         return getRoot(player).getInt("sp_pend_" + skill.name());

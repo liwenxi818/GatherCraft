@@ -1,5 +1,12 @@
 # GatherCraft Changelog
 
+## [1.7.1] - 2026-08-11
+
+### 버그 수정
+- **[높음] MINING_SPEED/LUMBERJACK_SPEED 스탯 float 정밀도 버그 수정**: v1.7.0 실기 테스트에서 "6번 선택해도 Haste가 안 오른다"는 문제 발견. `SkillData.addStatValue()`가 `float` 값을 매번 `+= 0.03f`로 반복 누적하다 보니 6번 선택 후 실제 저장값이 정확한 `0.18f`가 아니라 `0.17999999f`가 되고, `PlayerTickHandler`의 `(int)(statValue / 0.18f)` 버림 연산에서 `0.9999999`가 `0`으로 잘려 7번째 선택에야 Haste가 오르는 오프바이원 버그였다(12번째도 마찬가지로 13번째에야 반영)
+  - `SkillData.getStatPickCount()` 신설: `Math.round(누적값 / increment)`로 실제 선택 횟수를 정수로 복원 후, 그 정수를 `SkillPointStat.HASTE_PICKS_PER_LEVEL`(=6)로 정수 나눗셈 — float 오차가 임계값 판정에 영향을 주지 않도록 함
+  - `PlayerTickHandler.applyMiningHaste()`/`applyLumberjackHaste()`, `SkillPointScreen.resolveDescription()` 모두 이 방식으로 통일
+
 ## [1.7.0] - 2026-08-10
 
 ### 버그 수정 (노션 피드백 반영)

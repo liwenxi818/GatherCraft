@@ -236,8 +236,8 @@ public class PlayerTickHandler {
 
         int totalAmplifier = 2;
         if (isLookingAtLog(player)) {
-            float statValue = SkillData.getStatValue(player, SkillPointStat.LUMBERJACK_SPEED);
-            totalAmplifier += (int) (statValue / 0.18f);
+            int picks = SkillData.getStatPickCount(player, SkillPointStat.LUMBERJACK_SPEED);
+            totalAmplifier += picks / SkillPointStat.HASTE_PICKS_PER_LEVEL;
         }
         totalAmplifier = Math.min(totalAmplifier, 4); // 최대 Haste V 캡
 
@@ -274,8 +274,8 @@ public class PlayerTickHandler {
 
         int totalAmplifier = level >= 80 ? 2 : level >= 40 ? 1 : 0;
         if (isLookingAtOre(player)) {
-            float statValue = SkillData.getStatValue(player, SkillPointStat.MINING_SPEED);
-            totalAmplifier += (int) (statValue / 0.18f);
+            int picks = SkillData.getStatPickCount(player, SkillPointStat.MINING_SPEED);
+            totalAmplifier += picks / SkillPointStat.HASTE_PICKS_PER_LEVEL;
         }
         totalAmplifier = Math.min(totalAmplifier, 4); // 최대 Haste V 캡
 

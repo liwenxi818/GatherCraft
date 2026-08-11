@@ -215,7 +215,7 @@ public class SkillPointScreen extends Screen {
     private String resolveDescription(SkillPointStat stat, float current) {
         if (!stat.description.contains("{n}")) return stat.description;
         int totalPicks = Math.round(current / stat.increment);
-        int n = totalPicks % 6;
+        int n = totalPicks % SkillPointStat.HASTE_PICKS_PER_LEVEL;
         return stat.description.replace("{n}", String.valueOf(n));
     }
 

@@ -333,7 +333,7 @@ tpa/
 ```bash
 ./gradlew clean build
 ```
-결과물: `build/libs/gathercraft-1.7.0.jar`
+결과물: `build/libs/gathercraft-1.7.1.jar`
 
 # 릴리스 아카이브
 `releases/` 폴더에 버전별 jar를 누적 보관한다. **버전을 올리고 빌드에 성공할 때마다** 새 jar를 이 폴더에 복사한다 (기존 파일은 덮어쓰지 않고 계속 쌓아 과거 버전도 남겨둠).
@@ -374,6 +374,7 @@ cp build/libs/gathercraft-<버전>.jar releases/
 | v1.6.8 | 연쇄 벌목 재진입 가드 추가(가드 없던 경우), /gathercraft test auto 확장: 연쇄 벌목 가드·익스플로잇 방어·스탯 적용 코드 레벨 검증 추가 |
 | v1.6.9 | 레벨업 선택지 설명 추가: SkillPointStat에 description 필드, SkillPointScreen 버튼 3줄 구조(이름/설명/증가량) |
 | v1.7.0 | 노션 피드백 반영: MINING/LUMBERJACK_SPEED 텍스트 수정, 오버밸런스 너프(6포인트→Haste +1), 레벨+스탯 Haste 합산 버그 수정, 채굴/벌목 Haste 크로스 버그 수정(바라보는 블록 타입 분리) |
+| v1.7.1 | v1.7.0 실기 테스트에서 발견된 float 정밀도 버그 수정: 6번 선택해도 Haste가 안 오르던 문제(7번째에야 반영) — `SkillData.getStatPickCount()`로 정수 기반 임계값 계산으로 전환 |
 
 ---
 
@@ -452,9 +453,10 @@ v1.6.3에서 구현한 낚시 속도 증가가 실기 테스트에서 "레벨과
 
 # 🧪 다음 세션 확인 필요
 
-## v1.7.0 실기 테스트 미완료 (2026-08-10 기준)
-- **Haste 합산/크로스 버그 수정 실기 확인 필요**: `PlayerTickHandler.applyMiningHaste()`/`applyLumberjackHaste()`를 레벨+스탯 amplifier 합산 방식으로 재작성하고, `isLookingAtOre()`/`isLookingAtLog()`(5블록 레이캐스트 기반)로 스탯 보너스를 활동별로 분리했다. 컴파일만 확인했고 `gradlew runClient`로 아직 검증하지 않음. 다음 세션에서 `/gathercraft test mining 80` + MINING_SPEED에 포인트 다수 투자 후: (1) 곡괭이로 광석을 바라볼 때 레벨+스탯 합산 Haste가 붙는지, (2) 나무를 바라볼 때는 스탯 보너스 없이 레벨 기반 Haste만 남는지, (3) 허공을 볼 때도 레벨 기반 Haste는 유지되는지 실기로 확인 필요. LUMBERJACK_SPEED(80레벨+도끼 소지 조건)도 동일하게 교차 검증 필요.
-- **SkillPointScreen "(현재 N/6)" 동적 표시 시각 확인 필요**: `{n}` 플레이스홀더를 `resolveDescription()`에서 실제 누적값 기준으로 치환하도록 구현했으나, 축소 렌더링(0.75x) 폭 안에서 텍스트가 잘리지 않는지, 6번째 선택 직후 카운터가 0/6으로 정상 롤오버되는지 시각 확인 필요.
+## v1.7.1 실기 재검증 필요 (2026-08-11 기준)
+- **float 정밀도 버그 수정 후 재검증 필요**: v1.7.0을 `gradlew runClient`로 실기 테스트한 결과 "MINING_SPEED를 6번 이상 선택해도 Haste가 안 오른다"는 문제가 실제로 재현됨. 원인은 float 누적 오차로 인한 오프바이원(6번째가 아니라 7번째에 반영)이었고, `SkillData.getStatPickCount()`(정수 반올림 기반)로 수정 후 `javac`로 독립 검증까지는 완료(6/12/18번째에 정확히 amplifier가 오르는 것 확인). 다만 실제 게임 클라이언트에서 재검증은 아직 못함 — 다음 세션에서 `/gathercraft test mining 80` + MINING_SPEED 정확히 6번 선택 후 광석을 바라보며 Haste 수치(F3+H)가 즉시 오르는지 확인 필요.
+- **Haste 크로스 분리(바라보는 블록 타입) 실기 확인 필요**: 곡괭이로 광석을 바라볼 때 vs 나무를 바라볼 때 vs 허공을 바라볼 때 Haste 적용이 의도대로 갈리는지 아직 시각 확인 안 됨(v1.7.0 세션에서는 크래시 없음만 확인, 명령어 사용 로그 없이 종료됨). LUMBERJACK_SPEED(80레벨+도끼 소지 조건)도 동일하게 확인 필요.
+- **SkillPointScreen "(현재 N/6)" 동적 표시 시각 확인 필요**: 축소 렌더링(0.75x) 폭 안에서 텍스트가 잘리지 않는지, 6번째 선택 직후 카운터가 0/6으로 정상 롤오버되는지 시각 확인 필요.
 
 ## v1.6.9 실기 테스트 미완료 (2026-08-10 기준)
 - **레벨업 팝업 3줄 버튼 레이아웃 시각 확인 필요**: `SkillPointScreen.renderButton()`에 설명 텍스트(2번째 줄)를 `PoseStack.scale(0.75f)`로 축소 렌더링하는 로직을 추가했다. 컴파일은 성공했지만, 36개 스탯 설명 텍스트가 `BTN_W=260` 폭 안에서 잘리거나 겹치지 않는지, `BTN_H=46`/`POPUP_H=250`으로 확대한 팝업이 시각적으로 자연스러운지는 아직 `gradlew runClient`로 확인하지 않았다. 다음 세션에서 `/gathercraft test <skill> <level>`로 레벨업을 유도해 팝업을 직접 띄워 확인 필요(특히 가장 긴 설명 문자열인 `MINING_SPEED`/`LUMBERJACK_SPEED`의 "채굴/벌목 속도 증가 (3포인트마다 Haste +1)").
