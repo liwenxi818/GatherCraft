@@ -12,6 +12,7 @@ import com.gathercraft.gathercraft.network.packet.QuestSyncPacket;
 import com.gathercraft.gathercraft.network.packet.ScreenFlashPacket;
 import com.gathercraft.gathercraft.network.packet.SkillPointChoicePacket;
 import com.gathercraft.gathercraft.network.packet.SkillPointOfferPacket;
+import com.gathercraft.gathercraft.network.packet.SkillPointStatSyncPacket;
 import com.gathercraft.gathercraft.network.packet.SkillXpUpdatePacket;
 import com.gathercraft.gathercraft.network.packet.TitleBroadcastPacket;
 import com.gathercraft.gathercraft.network.packet.TitleEquipPacket;
@@ -171,6 +172,12 @@ public class PacketHandler {
             .encoder(AchievementClaimPacket::encode)
             .decoder(AchievementClaimPacket::decode)
             .consumerMainThread(AchievementClaimPacket::handle)
+            .add();
+
+        CHANNEL.messageBuilder(SkillPointStatSyncPacket.class, 22, NetworkDirection.PLAY_TO_CLIENT)
+            .encoder(SkillPointStatSyncPacket::encode)
+            .decoder(SkillPointStatSyncPacket::decode)
+            .consumerMainThread(SkillPointStatSyncPacket::handle)
             .add();
     }
 

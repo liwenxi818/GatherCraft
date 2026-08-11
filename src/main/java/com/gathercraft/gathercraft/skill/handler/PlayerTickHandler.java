@@ -153,6 +153,9 @@ public class PlayerTickHandler {
             }
         }
 
+        // MINING_SPEED/LUMBERJACK_SPEED 클라이언트 동기화 (BreakSpeed 예측용)
+        SkillManager.sendSpeedStatSync(sp);
+
         // 웨이포인트 목록 클라이언트 동기화
         PacketHandler.sendToPlayer(sp, new WaypointSyncPacket(WaypointManager.getAll(sp)));
 

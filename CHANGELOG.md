@@ -1,5 +1,11 @@
 # GatherCraft Changelog
 
+## [1.8.1] - 2026-08-11
+
+### 기능 개선
+- **MINING_SPEED/LUMBERJACK_SPEED 클라이언트 동기화 패킷 추가**: v1.8.0에서 "알려진 한계"로 남겨뒀던 클라이언트 크랙 오버레이 어긋남 문제 해소. `SkillPointStatSyncPacket`(S2C, ID 22) 신설 — 로그인 시(`PlayerTickHandler.onPlayerLogin`) + 두 스탯 중 하나를 선택할 때마다(`SkillPointChoicePacket.handle`) 클라이언트 로컬 플레이어의 NBT(`SkillData` 루트)에 값을 직접 기록해, 기존 `SkillData.getStatValue()`를 그대로 쓰는 `MiningHandler`/`LumberjackHandler`의 `onBreakSpeed()`가 클라이언트/서버 양쪽에서 코드 변경 없이 동일하게 동작하도록 함
+  - `SkillManager.sendSpeedStatSync(ServerPlayer)` 헬퍼로 전송 로직 통일
+
 ## [1.8.0] - 2026-08-11
 
 ### 설계 변경

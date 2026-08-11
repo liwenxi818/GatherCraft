@@ -50,6 +50,11 @@ public class SkillPointChoicePacket {
             // 스탯 누적 적용
             SkillData.addStatValue(sp, chosen, chosen.increment);
 
+            // MINING_SPEED/LUMBERJACK_SPEED는 클라이언트 BreakSpeed 예측에도 쓰이므로 즉시 동기화
+            if (chosen == SkillPointStat.MINING_SPEED || chosen == SkillPointStat.LUMBERJACK_SPEED) {
+                SkillManager.sendSpeedStatSync(sp);
+            }
+
             // pending 감소
             int remaining = SkillData.getPendingCount(sp, packet.skill) - 1;
             SkillData.setPendingCount(sp, packet.skill, remaining);

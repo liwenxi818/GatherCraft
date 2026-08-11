@@ -205,7 +205,8 @@ src/main/java/com/gathercraft/gathercraft/
 │       ├── OpenQuestBoardPacket.java     # 스킬 책 GUI를 퀘스트 탭(4)으로 오픈 (S2C, ID 18)
 │       ├── AchievementSyncPacket.java    # 업적 해금 목록 + 수령 목록 + 카운터 동기화 (S2C, ID 19)
 │       ├── QuestClaimPacket.java         # 퀘스트 보상 수령 요청 (C2S, ID 20)
-│       └── AchievementClaimPacket.java   # 업적 보상 수령 요청 (C2S, ID 21)
+│       ├── AchievementClaimPacket.java   # 업적 보상 수령 요청 (C2S, ID 21)
+│       └── SkillPointStatSyncPacket.java # MINING_SPEED/LUMBERJACK_SPEED 클라이언트 NBT 동기화 (S2C, ID 22)
 ├── client/
 │   ├── ClientSetup.java          # 오버레이/키바인딩 등록 (modBus, 클라이언트 전용)
 │   ├── gui/
@@ -316,6 +317,7 @@ tpa/
 - 업적 카운터 적립+체크: `AchievementManager.incrementAndCheck(serverPlayer, counter, amount, checkIds...)`
 - 전 스킬 레벨 기반 종합 업적 체크: `AchievementManager.checkAllSkillLevel(serverPlayer)` (`SkillManager.onLevelUp()`에서 매 레벨업마다 호출)
 - 업적 동기화 패킷 생성: `AchievementManager.buildSyncPacket(player)` → `AchievementSyncPacket` (unlocked/claimed/counters 3필드)
+- MINING_SPEED/LUMBERJACK_SPEED 클라이언트 동기화: `SkillManager.sendSpeedStatSync(serverPlayer)` (로그인 시 + `SkillPointChoicePacket` 핸들러에서 해당 스탯 선택 시 호출)
 
 # 명령어
 - `/skill` — 전체 스킬 현황
@@ -333,7 +335,7 @@ tpa/
 ```bash
 ./gradlew clean build
 ```
-결과물: `build/libs/gathercraft-1.8.0.jar`
+결과물: `build/libs/gathercraft-1.8.1.jar`
 
 # 릴리스 아카이브
 `releases/` 폴더에 버전별 jar를 누적 보관한다. **버전을 올리고 빌드에 성공할 때마다** 새 jar를 이 폴더에 복사한다 (기존 파일은 덮어쓰지 않고 계속 쌓아 과거 버전도 남겨둠).
@@ -376,6 +378,7 @@ cp build/libs/gathercraft-<버전>.jar releases/
 | v1.7.0 | 노션 피드백 반영: MINING/LUMBERJACK_SPEED 텍스트 수정, 오버밸런스 너프(6포인트→Haste +1), 레벨+스탯 Haste 합산 버그 수정, 채굴/벌목 Haste 크로스 버그 수정(바라보는 블록 타입 분리) |
 | v1.7.1 | v1.7.0 실기 테스트에서 발견된 float 정밀도 버그 수정: 6번 선택해도 Haste가 안 오르던 문제(7번째에야 반영) — `SkillData.getStatPickCount()`로 정수 기반 임계값 계산으로 전환 |
 | v1.8.0 | MINING/LUMBERJACK_SPEED를 Haste 기반 → `PlayerEvent.BreakSpeed` 직접 배속 방식으로 재설계(도구별 완전 분리, 포인트당 +3% 즉시 체감). 레벨 기반 Haste(20/40/80)는 유지 |
+| v1.8.1 | `SkillPointStatSyncPacket`(ID 22) 신설: MINING_SPEED/LUMBERJACK_SPEED를 클라이언트 로컬 플레이어 NBT에 동기화해 v1.8.0의 "클라이언트 크랙 오버레이 어긋남" 한계 해소 |
 
 ---
 
@@ -454,9 +457,8 @@ v1.6.3에서 구현한 낚시 속도 증가가 실기 테스트에서 "레벨과
 
 # 🧪 다음 세션 확인 필요
 
-## v1.8.0 실기 테스트 필요 (2026-08-11 기준)
-- **BreakSpeed 직접 배속 실기 확인 필요**: v1.7.x의 Haste 합산 방식을 전면 폐기하고 `MiningHandler`/`LumberjackHandler`에 `PlayerEvent.BreakSpeed` 리스너를 신설해 곡괭이/도끼 블록 파괴 순간에만 직접 배속을 곱하는 방식으로 교체했다. 컴파일만 확인했고 아직 `gradlew runClient` 실기 검증 전. 다음 세션에서 확인할 것: (1) MINING_SPEED에 포인트 투자 후 곡괭이로 광석을 캘 때 파괴 속도가 즉시(단계 없이 연속적으로) 빨라지는지, (2) 같은 상태로 도끼를 들고 나무를 벨 때는 영향이 없는지(크로스 오염 완전 차단 확인), (3) LUMBERJACK_SPEED도 대칭 검증.
-- **클라이언트 크랙 오버레이 시각 어긋남 체감 확인**: 스탯 값이 클라이언트로 동기화되지 않아(알려진 한계, CHANGELOG v1.8.0 참고) 서버 파괴는 정확히 빨라지지만 클라이언트 크랙 애니메이션은 보너스 없이 계산된다. 싱글플레이(`runClient`, 로컬 통합 서버)에서는 지연이 거의 없어 체감이 안 될 가능성이 높지만, 실제로 눈에 띄는 수준인지 확인 필요. 거슬리면 스탯 값 동기화 패킷(다른 ClientCache들과 동일 패턴) 추가를 고려.
+## v1.8.1 실기 테스트 필요 (2026-08-11 기준)
+- **BreakSpeed 직접 배속 + 동기화 패킷 실기 확인 필요**: v1.7.x의 Haste 합산 방식을 전면 폐기하고 `MiningHandler`/`LumberjackHandler`에 `PlayerEvent.BreakSpeed` 리스너를 신설해 곡괭이/도끼 블록 파괴 순간에만 직접 배속을 곱하는 방식으로 교체했고(v1.8.0), 클라이언트 크랙 오버레이 어긋남 문제도 `SkillPointStatSyncPacket`으로 해소했다(v1.8.1). 컴파일만 확인했고 아직 `gradlew runClient` 실기 검증 전. 다음 세션에서 확인할 것: (1) MINING_SPEED에 포인트 투자 후 곡괭이로 광석을 캘 때 파괴 속도가 즉시(단계 없이 연속적으로) 빨라지는지, (2) 크랙 오버레이가 서버 파괴 타이밍과 어긋나지 않는지(블록이 크랙 애니메이션보다 먼저 사라지지 않는지), (3) 같은 상태로 도끼를 들고 나무를 벨 때는 영향이 없는지(크로스 오염 완전 차단 확인), (4) LUMBERJACK_SPEED도 대칭 검증, (5) 로그인 시 기존에 투자해둔 포인트가 재접속 후에도 클라이언트에 정상 동기화되는지.
 
 ## v1.6.9 실기 테스트 미완료 (2026-08-10 기준)
 - **레벨업 팝업 3줄 버튼 레이아웃 시각 확인 필요**: `SkillPointScreen.renderButton()`에 설명 텍스트(2번째 줄)를 `PoseStack.scale(0.75f)`로 축소 렌더링하는 로직을 추가했다. 컴파일은 성공했지만, 36개 스탯 설명 텍스트가 `BTN_W=260` 폭 안에서 잘리거나 겹치지 않는지, `BTN_H=46`/`POPUP_H=250`으로 확대한 팝업이 시각적으로 자연스러운지는 아직 `gradlew runClient`로 확인하지 않았다. 다음 세션에서 `/gathercraft test <skill> <level>`로 레벨업을 유도해 팝업을 직접 띄워 확인 필요(특히 가장 긴 설명 문자열인 `MINING_SPEED`/`LUMBERJACK_SPEED`의 "채굴/벌목 속도 증가 (3포인트마다 Haste +1)").

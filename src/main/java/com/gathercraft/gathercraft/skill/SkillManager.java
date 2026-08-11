@@ -3,6 +3,7 @@ package com.gathercraft.gathercraft.skill;
 import com.gathercraft.gathercraft.achievement.AchievementManager;
 import com.gathercraft.gathercraft.network.PacketHandler;
 import com.gathercraft.gathercraft.network.packet.SkillPointOfferPacket;
+import com.gathercraft.gathercraft.network.packet.SkillPointStatSyncPacket;
 import com.gathercraft.gathercraft.network.packet.SkillXpUpdatePacket;
 import com.gathercraft.gathercraft.particle.ParticleUtil;
 import com.gathercraft.gathercraft.skill.handler.PlayerTickHandler;
@@ -90,6 +91,17 @@ public class SkillManager {
             vals[i] = SkillData.getStatValue(sp, stat);
         }
         PacketHandler.sendToPlayer(sp, new SkillPointOfferPacket(skill, level, ords, vals));
+    }
+
+    /**
+     * MINING_SPEED/LUMBERJACK_SPEED 누적값을 클라이언트 로컬 플레이어 NBT에 동기화한다.
+     * PlayerEvent.BreakSpeed의 클라이언트 예측이 서버 파괴 속도와 일치하도록 로그인 시 +
+     * 두 스탯 중 하나를 선택할 때마다 호출한다.
+     */
+    public static void sendSpeedStatSync(ServerPlayer sp) {
+        float mining = SkillData.getStatValue(sp, SkillPointStat.MINING_SPEED);
+        float lumberjack = SkillData.getStatValue(sp, SkillPointStat.LUMBERJACK_SPEED);
+        PacketHandler.sendToPlayer(sp, new SkillPointStatSyncPacket(mining, lumberjack));
     }
 
     private static void onLevelUp(Player player, SkillType skill, int newLevel) {
