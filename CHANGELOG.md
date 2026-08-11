@@ -1,5 +1,14 @@
 # GatherCraft Changelog
 
+## [1.8.0] - 2026-08-11
+
+### 설계 변경
+- **MINING_SPEED/LUMBERJACK_SPEED를 Haste 기반 → 직접 배속 방식으로 재설계**: v1.7.0~v1.7.1에서 Haste amplifier 합산 방식으로 구현했으나, Haste는 "모든 블록 채굴 속도"에 걸리는 범용 상태 효과라 도구/블록 종류를 구분하지 못하는 구조적 한계가 있었다(주기적으로 바라보는 블록을 체크해 근사하는 방식이었고, 효과 잔류 시간 동안 다른 활동에도 영향을 줄 수 있었으며 6포인트 단위라 체감이 둔함)
+  - `MiningHandler`/`LumberjackHandler`에 `PlayerEvent.BreakSpeed` 리스너 신설 — 곡괭이용 블록(`BlockTags.MINEABLE_WITH_PICKAXE`)을 파괴하는 그 순간에만 MINING_SPEED 누적값만큼 배속을 직접 곱하고, 도끼용 블록(`BlockTags.MINEABLE_WITH_AXE`)에는 LUMBERJACK_SPEED로 동일하게 처리 — 활동 간 완전 분리, 잔류 효과 없음, 포인트당 +3%가 즉시 연속적으로 체감됨
+  - `PlayerTickHandler.applyMiningHaste()`/`applyLumberjackHaste()`는 레벨 기반 상시 Haste(20/40/80레벨)만 남기고 스탯 연동 제거 — 원래 v1.6.9 이전 형태로 복원
+  - `SkillPointStat`의 MINING_SPEED/LUMBERJACK_SPEED 표시 텍스트를 "+3%" 단순 표기로 되돌림(Haste 문구·"(현재 N/6)" 동적 표시 제거), `SkillData.getStatPickCount()`도 함께 제거(용도 소멸)
+  - **알려진 한계**: `PlayerEvent.BreakSpeed`는 클라이언트/서버 양쪽에서 각각 발동하는데, MINING_SPEED/LUMBERJACK_SPEED 스탯 값은 서버의 플레이어 NBT에만 있고 클라이언트로 동기화되지 않는다. 따라서 실제 블록 파괴(서버 authoritative)는 정확히 배속이 반영되지만, 클라이언트 쪽 파괴 진행도(크랙 오버레이) 예측에는 반영되지 않아 미세한 시각적 어긋남(블록이 크랙 애니메이션보다 살짝 먼저 사라지는 정도)이 생길 수 있다. 별도 동기화 패킷 없이는 완전히 없앨 수 없으며, 현재는 허용 가능한 수준의 코스메틱 이슈로 판단해 보류함
+
 ## [1.7.1] - 2026-08-11
 
 ### 버그 수정

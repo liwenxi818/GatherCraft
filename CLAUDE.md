@@ -333,7 +333,7 @@ tpa/
 ```bash
 ./gradlew clean build
 ```
-결과물: `build/libs/gathercraft-1.7.1.jar`
+결과물: `build/libs/gathercraft-1.8.0.jar`
 
 # 릴리스 아카이브
 `releases/` 폴더에 버전별 jar를 누적 보관한다. **버전을 올리고 빌드에 성공할 때마다** 새 jar를 이 폴더에 복사한다 (기존 파일은 덮어쓰지 않고 계속 쌓아 과거 버전도 남겨둠).
@@ -375,6 +375,7 @@ cp build/libs/gathercraft-<버전>.jar releases/
 | v1.6.9 | 레벨업 선택지 설명 추가: SkillPointStat에 description 필드, SkillPointScreen 버튼 3줄 구조(이름/설명/증가량) |
 | v1.7.0 | 노션 피드백 반영: MINING/LUMBERJACK_SPEED 텍스트 수정, 오버밸런스 너프(6포인트→Haste +1), 레벨+스탯 Haste 합산 버그 수정, 채굴/벌목 Haste 크로스 버그 수정(바라보는 블록 타입 분리) |
 | v1.7.1 | v1.7.0 실기 테스트에서 발견된 float 정밀도 버그 수정: 6번 선택해도 Haste가 안 오르던 문제(7번째에야 반영) — `SkillData.getStatPickCount()`로 정수 기반 임계값 계산으로 전환 |
+| v1.8.0 | MINING/LUMBERJACK_SPEED를 Haste 기반 → `PlayerEvent.BreakSpeed` 직접 배속 방식으로 재설계(도구별 완전 분리, 포인트당 +3% 즉시 체감). 레벨 기반 Haste(20/40/80)는 유지 |
 
 ---
 
@@ -453,10 +454,9 @@ v1.6.3에서 구현한 낚시 속도 증가가 실기 테스트에서 "레벨과
 
 # 🧪 다음 세션 확인 필요
 
-## v1.7.1 실기 재검증 필요 (2026-08-11 기준)
-- **float 정밀도 버그 수정 후 재검증 필요**: v1.7.0을 `gradlew runClient`로 실기 테스트한 결과 "MINING_SPEED를 6번 이상 선택해도 Haste가 안 오른다"는 문제가 실제로 재현됨. 원인은 float 누적 오차로 인한 오프바이원(6번째가 아니라 7번째에 반영)이었고, `SkillData.getStatPickCount()`(정수 반올림 기반)로 수정 후 `javac`로 독립 검증까지는 완료(6/12/18번째에 정확히 amplifier가 오르는 것 확인). 다만 실제 게임 클라이언트에서 재검증은 아직 못함 — 다음 세션에서 `/gathercraft test mining 80` + MINING_SPEED 정확히 6번 선택 후 광석을 바라보며 Haste 수치(F3+H)가 즉시 오르는지 확인 필요.
-- **Haste 크로스 분리(바라보는 블록 타입) 실기 확인 필요**: 곡괭이로 광석을 바라볼 때 vs 나무를 바라볼 때 vs 허공을 바라볼 때 Haste 적용이 의도대로 갈리는지 아직 시각 확인 안 됨(v1.7.0 세션에서는 크래시 없음만 확인, 명령어 사용 로그 없이 종료됨). LUMBERJACK_SPEED(80레벨+도끼 소지 조건)도 동일하게 확인 필요.
-- **SkillPointScreen "(현재 N/6)" 동적 표시 시각 확인 필요**: 축소 렌더링(0.75x) 폭 안에서 텍스트가 잘리지 않는지, 6번째 선택 직후 카운터가 0/6으로 정상 롤오버되는지 시각 확인 필요.
+## v1.8.0 실기 테스트 필요 (2026-08-11 기준)
+- **BreakSpeed 직접 배속 실기 확인 필요**: v1.7.x의 Haste 합산 방식을 전면 폐기하고 `MiningHandler`/`LumberjackHandler`에 `PlayerEvent.BreakSpeed` 리스너를 신설해 곡괭이/도끼 블록 파괴 순간에만 직접 배속을 곱하는 방식으로 교체했다. 컴파일만 확인했고 아직 `gradlew runClient` 실기 검증 전. 다음 세션에서 확인할 것: (1) MINING_SPEED에 포인트 투자 후 곡괭이로 광석을 캘 때 파괴 속도가 즉시(단계 없이 연속적으로) 빨라지는지, (2) 같은 상태로 도끼를 들고 나무를 벨 때는 영향이 없는지(크로스 오염 완전 차단 확인), (3) LUMBERJACK_SPEED도 대칭 검증.
+- **클라이언트 크랙 오버레이 시각 어긋남 체감 확인**: 스탯 값이 클라이언트로 동기화되지 않아(알려진 한계, CHANGELOG v1.8.0 참고) 서버 파괴는 정확히 빨라지지만 클라이언트 크랙 애니메이션은 보너스 없이 계산된다. 싱글플레이(`runClient`, 로컬 통합 서버)에서는 지연이 거의 없어 체감이 안 될 가능성이 높지만, 실제로 눈에 띄는 수준인지 확인 필요. 거슬리면 스탯 값 동기화 패킷(다른 ClientCache들과 동일 패턴) 추가를 고려.
 
 ## v1.6.9 실기 테스트 미완료 (2026-08-10 기준)
 - **레벨업 팝업 3줄 버튼 레이아웃 시각 확인 필요**: `SkillPointScreen.renderButton()`에 설명 텍스트(2번째 줄)를 `PoseStack.scale(0.75f)`로 축소 렌더링하는 로직을 추가했다. 컴파일은 성공했지만, 36개 스탯 설명 텍스트가 `BTN_W=260` 폭 안에서 잘리거나 겹치지 않는지, `BTN_H=46`/`POPUP_H=250`으로 확대한 팝업이 시각적으로 자연스러운지는 아직 `gradlew runClient`로 확인하지 않았다. 다음 세션에서 `/gathercraft test <skill> <level>`로 레벨업을 유도해 팝업을 직접 띄워 확인 필요(특히 가장 긴 설명 문자열인 `MINING_SPEED`/`LUMBERJACK_SPEED`의 "채굴/벌목 속도 증가 (3포인트마다 Haste +1)").
@@ -471,7 +471,7 @@ v1.6.3에서 구현한 낚시 속도 증가가 실기 테스트에서 "레벨과
 
 ## v1.6.6 실기 테스트 미완료 (2026-08-08 기준)
 SkillPointStat 13개 † 스탯 활성화는 코드 레벨 검증 + 빌드 성공까지만 이번 세션에서 진행했고, 실기 테스트는 하지 못했다. 다음 세션에서 `/gathercraft test <skill> <level>`로 레벨을 세팅하고 스킬 포인트를 해당 스탯에 투자한 뒤 체감 확인이 필요하다.
-- `MINING_SPEED`/`LUMBERJACK_SPEED`: Haste amplifier가 실제로 +1 올라가는지(3포인트=0.09 누적 시)
+- ~~`MINING_SPEED`/`LUMBERJACK_SPEED`: Haste amplifier가 실제로 +1 올라가는지(3포인트=0.09 누적 시)~~ → v1.8.0에서 Haste 방식 자체를 폐기하고 `PlayerEvent.BreakSpeed` 직접 배속으로 재설계했으므로 이 항목은 더 이상 유효하지 않음(최신 검증 항목은 상단 "v1.8.0 실기 테스트 필요" 참고)
 - `MINING_XP_BONUS`/`COOKING_SATURATION`: XP/포화도 수치가 정확히 곱·덧셈되는지
 - `FARMING_GROWTH`: 주변 플레이어 중 최고 레벨(`bestPlayer`) 판정이 의도대로 동작하는지(여러 플레이어가 같이 있을 때)
 - `COOKING_EXTRA_BUFF`: 80레벨 미만에서만 체감 효과가 있어야 함(80레벨 이상은 배열 길이 3 제한으로 무효과가 정상)

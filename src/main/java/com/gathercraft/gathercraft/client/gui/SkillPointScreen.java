@@ -179,7 +179,7 @@ public class SkillPointScreen extends Screen {
         g.drawString(font, nameText, nameX, nameY, 0xFFFFFF, true);
 
         // 설명 (축소 렌더링)
-        String descText = "§7" + resolveDescription(stat, currentValues[idx]);
+        String descText = "§7" + stat.description;
         int descWidth = Math.round(font.width(descText) * DESC_SCALE);
         int descX = bx + (BTN_W - descWidth) / 2;
         g.pose().pushPose();
@@ -200,7 +200,7 @@ public class SkillPointScreen extends Screen {
 
         List<FormattedCharSequence> lines = new ArrayList<>();
         lines.add(Component.literal("§6" + stat.displayName).getVisualOrderText());
-        lines.add(Component.literal("§7" + resolveDescription(stat, current)).getVisualOrderText());
+        lines.add(Component.literal("§7" + stat.description).getVisualOrderText());
 
         String valStr = formatStatValue(stat, current);
         lines.add(Component.literal("§7현재 누적: §a" + valStr).getVisualOrderText());
@@ -209,14 +209,6 @@ public class SkillPointScreen extends Screen {
         lines.add(Component.literal("§7선택 후: §b" + afterStr).getVisualOrderText());
 
         g.renderTooltip(font, lines, mouseX, mouseY);
-    }
-
-    /** description의 "{n}" 플레이스홀더를 현재 누적값 기준 사이클 진행도로 치환한다. */
-    private String resolveDescription(SkillPointStat stat, float current) {
-        if (!stat.description.contains("{n}")) return stat.description;
-        int totalPicks = Math.round(current / stat.increment);
-        int n = totalPicks % SkillPointStat.HASTE_PICKS_PER_LEVEL;
-        return stat.description.replace("{n}", String.valueOf(n));
     }
 
     private String formatStatValue(SkillPointStat stat, float value) {

@@ -13,7 +13,7 @@ public enum SkillPointStat {
 
     // === 채광 (MINING) ===
     MINING_EXTRA_DROP  (SkillType.MINING,     "추가 드롭 확률",      "+1%",    0.01f, "광석 채굴 시 아이템을 추가로 드롭"),
-    MINING_SPEED       (SkillType.MINING,     "채굴 속도",           "6회마다 성급함 +1", 0.03f, "6번 선택마다 채굴 성급함 레벨 +1 (현재 {n}/6)"),
+    MINING_SPEED       (SkillType.MINING,     "채굴 속도",           "+3%",    0.03f, "곡괭이로 캘 수 있는 블록을 파괴하는 속도 증가"),
     MINING_RARE_DROP   (SkillType.MINING,     "희귀 광석 드롭 확률", "+1%",    0.01f, "희귀 광석에서 추가 드롭 확률 증가"),
     MINING_XP_BONUS    (SkillType.MINING,     "채굴 XP 보너스",      "+5%",    0.05f, "채굴로 얻는 XP에 배율 적용"),
 
@@ -21,7 +21,7 @@ public enum SkillPointStat {
     LUMBERJACK_EXTRA_DROP (SkillType.LUMBERJACK, "원목 추가 드롭 확률", "+1%",  0.01f, "원목 채굴 시 추가 드롭 확률 증가"),
     LUMBERJACK_DURABILITY (SkillType.LUMBERJACK, "도끼 내구도 소모",   "-3%",   0.03f, "도끼 내구도 소모 취소 확률 증가"),
     LUMBERJACK_SAPLING    (SkillType.LUMBERJACK, "묘목 드롭 확률",    "+2%",    0.02f, "나뭇잎 파괴 시 묘목 드롭 확률 증가"),
-    LUMBERJACK_SPEED      (SkillType.LUMBERJACK, "벌목 속도",         "6회마다 성급함 +1", 0.03f, "6번 선택마다 벌목 성급함 레벨 +1 (현재 {n}/6)"),
+    LUMBERJACK_SPEED      (SkillType.LUMBERJACK, "벌목 속도",         "+3%",    0.03f, "도끼로 벨 수 있는 블록을 파괴하는 속도 증가"),
 
     // === 농사 (FARMING) ===
     FARMING_EXTRA_DROP (SkillType.FARMING,    "작물 추가 드롭",       "+1%",    0.01f, "작물 수확 시 추가 드롭 확률 증가"),
@@ -64,9 +64,6 @@ public enum SkillPointStat {
     ENCHANTING_LEVEL_BONUS (SkillType.ENCHANTING, "인챈트 레벨 보너스","+0.5",  0.5f, "인챈트 테이블 레벨 보너스 증가"),
     ENCHANTING_EXTRA       (SkillType.ENCHANTING, "추가 인챈트 확률",  "+1%",   0.01f, "인챈트 후 추가 인챈트 부여 확률 증가"),
     ENCHANTING_CURSE_IMMUNE(SkillType.ENCHANTING, "저주 면역 확률",    "+2%",   0.02f, "저주 인챈트 자동 제거 확률 증가");
-
-    /** MINING_SPEED / LUMBERJACK_SPEED 전용: 이 횟수만큼 선택할 때마다 Haste amplifier +1 */
-    public static final int HASTE_PICKS_PER_LEVEL = 6;
 
     public final SkillType skill;
     public final String displayName;

@@ -19,6 +19,7 @@ import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.common.Tags;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -48,6 +49,19 @@ public class MiningHandler {
         } else if (placedState.is(BlockTags.LOGS)) {
             AntiExploitManager.markPlaced(placedPos, false);
         }
+    }
+
+    /**
+     * MINING_SPEED 스탯 포인트: 곡괭이로 캘 수 있는 블록을 파괴할 때만 직접 배속 적용.
+     * Haste 효과를 거치지 않고 그 순간의 파괴 속도 계산에 직접 곱해서, 벌목 등 다른 활동에는
+     * 절대 영향이 없다(성급함처럼 몇 초간 잔류하는 효과가 아니라 그 블록에 한정).
+     */
+    @SubscribeEvent
+    public void onBreakSpeed(PlayerEvent.BreakSpeed event) {
+        if (!event.getState().is(BlockTags.MINEABLE_WITH_PICKAXE)) return;
+        float bonus = SkillData.getStatValue(event.getEntity(), SkillPointStat.MINING_SPEED);
+        if (bonus <= 0f) return;
+        event.setNewSpeed(event.getNewSpeed() * (1f + bonus));
     }
 
     @SubscribeEvent

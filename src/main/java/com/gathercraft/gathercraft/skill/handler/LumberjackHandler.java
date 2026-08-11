@@ -20,6 +20,7 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
@@ -75,6 +76,19 @@ public class LumberjackHandler {
         } else {
             prevAxeDamage.remove(uuid);
         }
+    }
+
+    /**
+     * LUMBERJACK_SPEED 스탯 포인트: 도끼로 벨 수 있는 블록을 파괴할 때만 직접 배속 적용.
+     * MiningHandler.onBreakSpeed()와 동일한 방식 — Haste가 아니라 그 블록 파괴 속도에만 직접 적용되므로
+     * 채굴 등 다른 활동에는 영향이 없다.
+     */
+    @SubscribeEvent
+    public void onBreakSpeed(PlayerEvent.BreakSpeed event) {
+        if (!event.getState().is(BlockTags.MINEABLE_WITH_AXE)) return;
+        float bonus = SkillData.getStatValue(event.getEntity(), SkillPointStat.LUMBERJACK_SPEED);
+        if (bonus <= 0f) return;
+        event.setNewSpeed(event.getNewSpeed() * (1f + bonus));
     }
 
     // [2] 나뭇잎 드롭 확률 증가 (30레벨 5%, 70레벨 10%)
